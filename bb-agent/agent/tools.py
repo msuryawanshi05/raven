@@ -1,46 +1,59 @@
-"""Tool definitions and the passive-safety classifier.
+"""Tool execution + passive-safety classifier + failure-router orchestration.
 
-The passive check is a security boundary: in --mode auto it decides what runs
-without a human. Keep it strict — unknown binaries and active flags fall through
-to a prompt rather than auto-executing.
+Two security boundaries live here:
+- is_passive(): decides what auto-runs in --mode auto (unchanged from Phase 1).
+- no shell: commands run via shlex.split (list form), never shell=True, so
+  chaining/injection (;, &&, |, backticks) cannot execute.
 """
 import os
+import re
 import shlex
 import subprocess
 
-TIMEOUT = 1800  # seconds; reconftw passive can be slow
+from . import fallback
+
+TIMEOUT = 1800     # seconds; reconftw passive can be slow
 MAX_OUTPUT = 8000  # chars fed back to the LLM
 
+_URL_RE = re.compile(r"https?://[^\s'\"]+")
 
-def _run(cmd, shell=False):
+
+def _run(argv):
+    """Run an argv list (no shell). Returns (output, ok)."""
     try:
-        p = subprocess.run(
-            cmd, shell=shell, capture_output=True, text=True, timeout=TIMEOUT
-        )
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        return f"[timed out after {TIMEOUT}s]"
+        return f"[timed out after {TIMEOUT}s]", False
+    except FileNotFoundError as e:
+        return f"[command not found: {e}]", False
     out = (p.stdout or "") + (p.stderr or "")
     if len(out) > MAX_OUTPUT:
         out = out[:MAX_OUTPUT] + f"\n...[truncated, {len(out)} chars total]"
-    return out.strip() or "[no output]"
+    return (out.strip() or "[no output]"), (p.returncode == 0)
 
 
-def run_reconftw(reconftw_path: str, action_input: str) -> str:
+def run_reconftw(reconftw_path: str, action_input: str):
     path = os.path.expanduser(reconftw_path)
     if not os.path.isfile(path):
-        raise FileNotFoundError(path)
+        return f"[reconftw not found at {path}]", False
     return _run(["bash", path, *shlex.split(action_input)])
 
 
-def run_command(action_input: str) -> str:
-    return _run(action_input, shell=True)
+def run_command(action_input: str):
+    try:
+        argv = shlex.split(action_input)
+    except ValueError as e:
+        return f"[unparseable command: {e}]", False
+    if not argv:
+        return "[empty command]", False
+    return _run(argv)
 
 
-# --- passive classifier -----------------------------------------------------
+# --- passive classifier (Phase 1, unchanged) --------------------------------
 
 _ACTIVE_CURL = {"-X", "--request", "-d", "--data", "--data-raw", "--data-binary",
                 "-T", "--upload-file", "-F", "--form"}
-_ACTIVE_RECONFTW = {"-a", "-r", "-s", "--deep"}  # all/recon/subdomains-active etc.
+_ACTIVE_RECONFTW = {"-a", "-r", "-s", "--deep"}
 
 
 def is_passive(action: str, action_input: str, whitelist) -> bool:
@@ -70,5 +83,56 @@ def is_passive(action: str, action_input: str, whitelist) -> bool:
         return not any(f in ("-X", "--request") for f in flags)  # GET only
     if binary == "httpx":
         return "fuzz" not in action_input.lower()
-    # subfinder, whois, dig, nslookup: passive by nature
-    return True
+    return True  # subfinder, whois, dig, nslookup
+
+
+# --- failure router ---------------------------------------------------------
+
+def url_in(action_input: str) -> str:
+    m = _URL_RE.search(action_input)
+    return m.group(0) if m else ""
+
+
+def execute(action, action_input, cfg, approve, announce, domain="", url=""):
+    """Run the primary command; on failure walk the fallback chain.
+
+    approve(cmd)->bool gates each *fallback* (the primary is already approved by
+    the caller). announce(msg) reports progress. Returns a result dict with:
+    status (success|fallback_used|failed), command, fallback_used, output,
+    attempts (list), manual (list of human-only suggestions).
+    """
+    if action == "run_reconftw":
+        output, ok = run_reconftw(cfg["reconftw_path"], action_input)
+    else:
+        output, ok = run_command(action_input)
+
+    if ok:
+        return {"status": "success", "command": action_input,
+                "fallback_used": None, "output": output, "attempts": [], "manual": []}
+
+    attempts = [{"command": action_input, "output": output, "ok": False}]
+    manual = []
+    announce(f"[red]Tool failed:[/] {action_input}")
+    max_fb = cfg.get("max_fallback_attempts", 3)
+    tried = 0
+
+    for cmd, is_manual in fallback.fallbacks(action, action_input, domain, url):
+        if is_manual:
+            manual.append(cmd)
+            continue
+        if tried >= max_fb:
+            break
+        announce(f"[yellow]Trying fallback:[/] {cmd}")
+        if not approve(cmd):
+            attempts.append({"command": cmd, "skipped": True})
+            continue
+        fb_out, fb_ok = run_command(cmd)
+        tried += 1
+        attempts.append({"command": cmd, "output": fb_out, "ok": fb_ok})
+        if fb_ok:
+            return {"status": "fallback_used", "command": action_input,
+                    "fallback_used": cmd, "output": fb_out,
+                    "attempts": attempts, "manual": manual}
+
+    return {"status": "failed", "command": action_input, "fallback_used": None,
+            "output": output, "attempts": attempts, "manual": manual}

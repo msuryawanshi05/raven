@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""bb-agent: agentic bug bounty assistant (Phase 1).
+"""bb-agent: agentic bug bounty assistant.
 
-Runs reconftw passive recon, then an LLM ReAct loop reasons over the output
-and proposes next steps under human approval.
+Runs reconftw passive recon, then an LLM ReAct loop reasons over the output,
+consults per-vuln technique guides, and proposes next steps under human approval
+with automatic fallback when a tool fails.
 """
 import os
 from pathlib import Path
@@ -30,25 +31,25 @@ def main(target, mode, model, config_path):
     cfg = yaml.safe_load(Path(config_path).read_text())
     model = model or cfg.get("model", "llama3.1")
 
+    # Open the session log first so even a failed run leaves a record.
+    log = SessionLog(target)
+    console.print(f"[bold]bb-agent[/] target=[cyan]{target}[/] mode=[cyan]{mode}[/] "
+                  f"model=[cyan]{model}[/]")
+    console.print(f"Session log: [dim]{log.path}[/]")
+    console.print(f"Notes:       [dim]{log.notes.path}[/]")
+
     reconftw = os.path.expanduser(cfg["reconftw_path"])
     if not os.path.isfile(reconftw):
         console.print(f"[red]reconftw not found at {reconftw}[/]")
         console.print("Install it: [cyan]https://github.com/six2dez/reconftw[/] "
                       "then set reconftw_path in config.yaml")
+        log.log("error", error=f"reconftw not found at {reconftw}")
         raise SystemExit(1)
-
-    log = SessionLog(target)
-    console.print(f"[bold]bb-agent[/] target=[cyan]{target}[/] mode=[cyan]{mode}[/] "
-                  f"model=[cyan]{model}[/]")
-    console.print(f"Session log: [dim]{log.path}[/]")
 
     console.print("[bold]Running passive recon (reconftw -p)...[/]")
-    try:
-        recon = tools.run_reconftw(reconftw, f"-d {target} -p")
-    except FileNotFoundError:
-        console.print("[red]reconftw disappeared mid-run.[/]")
-        raise SystemExit(1)
-    log.log("recon_seed", target=target, output=recon)
+    recon, ok = tools.run_reconftw(reconftw, f"-d {target} -p")
+    log.log("recon_seed", target=target, status="success" if ok else "failed",
+            output=recon)
 
     try:
         run(target, recon, model, mode, cfg, log)

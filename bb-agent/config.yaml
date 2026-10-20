@@ -3,6 +3,12 @@ model: llama3.1              # default ollama model (override with --model)
 reconftw_path: ~/reconftw/reconftw.sh
 max_steps: 15
 
+# Phase 2
+kb_path: ./kb               # technique knowledge base (relative = project root)
+max_fallback_attempts: 3    # fallbacks tried per failed command
+auto_note_findings: true    # auto-record findings when a keyword appears in output
+finding_keywords: ["200 OK", "reflected", "error in your SQL", "internal server error", "access denied bypass"]
+
 # Binaries auto-executed in --mode auto without asking.
 # Anything not listed here always prompts, even in auto mode.
 passive_whitelist:
