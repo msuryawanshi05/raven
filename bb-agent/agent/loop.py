@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from . import kb_loader, tools
+from .scope import ScopeEnforcer, ScopeViolation, command_target as scope_command_target
 from .prompts import system_prompt, initial_user_prompt
 
 console = Console()
@@ -85,6 +86,7 @@ def run(target, recon_summary, model, mode, config, log):
     whitelist = config.get("passive_whitelist", [])
     max_steps = config.get("max_steps", 15)
     approve_fb = _approver(mode, whitelist)
+    enforcer = ScopeEnforcer(config.get("scope", {}))
     consulted = set()
 
     for step in range(1, max_steps + 1):
@@ -126,6 +128,17 @@ def run(target, recon_summary, model, mode, config, log):
         console.print(Panel(f"[bold]{action}[/]\n{action_input}",
                             title=f"PROPOSED ACTION (step {step})", border_style="magenta"))
 
+        # Scope gate: hard block before the human is even asked.
+        tgt = scope_command_target(action, action_input, target)
+        sr = enforcer.check(tgt)
+        if not sr.allowed:
+            console.print(f"[red bold]SCOPE BLOCK:[/] {tgt} — {sr.reason}")
+            log.log("scope_block", step=step, target=tgt, reason=sr.reason,
+                    command=action_input)
+            messages.append({"role": "user",
+                             "content": f"OBSERVATION: Target {tgt} is out of scope. Do not test it. Propose an in-scope step or give FINAL_ANSWER."})
+            continue
+
         # Approval gate (Phase 1 behaviour, preserved).
         passive = tools.is_passive(action, action_input, whitelist)
         if mode == "auto" and passive:
@@ -140,9 +153,17 @@ def run(target, recon_summary, model, mode, config, log):
                                  "content": "OBSERVATION: user declined to run that command. Propose a different step or give FINAL_ANSWER."})
                 continue
 
-        result = tools.execute(action, action_input, config, approve_fb,
-                               console.print, domain=target,
-                               url=tools.url_in(action_input))
+        try:
+            result = tools.execute(action, action_input, config, approve_fb,
+                                   console.print, domain=target,
+                                   url=tools.url_in(action_input), scope=enforcer)
+        except ScopeViolation as e:  # safety net (e.g. a host the pre-check missed)
+            console.print(f"[red bold]SCOPE BLOCK:[/] {e.target} — {e.reason}")
+            log.log("scope_block", step=step, target=e.target, reason=e.reason,
+                    command=action_input)
+            messages.append({"role": "user",
+                             "content": f"OBSERVATION: Target {e.target} is out of scope. Do not test it."})
+            continue
         finding = _finding_hit(result["output"], config)
         if finding:
             log.notes.add("Potential Vulns",

@@ -30,3 +30,9 @@ services, cloud metadata, or scan the internal network.
 - [ ] reproduction steps + callback proof
 - [ ] impact (internal access, metadata/creds)
 - [ ] CVSS estimate
+
+## Impact
+Reach internal-only services and cloud metadata endpoints — credential theft and internal network recon.
+
+## Remediation
+Allowlist outbound hosts; block link-local/metadata IPs (169.254.169.254); disable unused URL schemes.

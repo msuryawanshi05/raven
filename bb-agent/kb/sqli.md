@@ -31,3 +31,9 @@ read/modify data or bypass auth.
 - [ ] reproduction steps
 - [ ] impact (data exposure scope)
 - [ ] CVSS estimate
+
+## Impact
+Read or modify arbitrary database contents, authentication bypass, and in some stacks remote code execution.
+
+## Remediation
+Parameterized queries / prepared statements; least-privilege DB user; strict input validation.

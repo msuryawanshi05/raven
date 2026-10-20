@@ -11,6 +11,7 @@ import shlex
 import subprocess
 
 from . import fallback
+from . import scope as scope_mod
 
 TIMEOUT = 1800     # seconds; reconftw passive can be slow
 MAX_OUTPUT = 8000  # chars fed back to the LLM
@@ -93,14 +94,24 @@ def url_in(action_input: str) -> str:
     return m.group(0) if m else ""
 
 
-def execute(action, action_input, cfg, approve, announce, domain="", url=""):
+def execute(action, action_input, cfg, approve, announce, domain="", url="", scope=None):
     """Run the primary command; on failure walk the fallback chain.
 
     approve(cmd)->bool gates each *fallback* (the primary is already approved by
     the caller). announce(msg) reports progress. Returns a result dict with:
     status (success|fallback_used|failed), command, fallback_used, output,
     attempts (list), manual (list of human-only suggestions).
+
+    scope (optional ScopeEnforcer): checked before the primary runs (raises
+    scope.ScopeViolation if blocked) and before each fallback (out-of-scope
+    fallbacks are skipped, not run).
     """
+    if scope is not None:
+        sr = scope.check(scope_mod.command_target(action, action_input, domain))
+        if not sr.allowed:
+            raise scope_mod.ScopeViolation(
+                scope_mod.command_target(action, action_input, domain), sr.reason)
+
     if action == "run_reconftw":
         output, ok = run_reconftw(cfg["reconftw_path"], action_input)
     else:
@@ -122,6 +133,11 @@ def execute(action, action_input, cfg, approve, announce, domain="", url=""):
             continue
         if tried >= max_fb:
             break
+        if scope is not None and not scope.check(
+                scope_mod.command_target("run_command", cmd, domain)).allowed:
+            announce(f"[red]Fallback out of scope, skipping:[/] {cmd}")
+            attempts.append({"command": cmd, "scope_blocked": True})
+            continue
         announce(f"[yellow]Trying fallback:[/] {cmd}")
         if not approve(cmd):
             attempts.append({"command": cmd, "skipped": True})

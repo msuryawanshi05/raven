@@ -32,3 +32,9 @@ an attacker run JavaScript in a victim's browser session.
 - [ ] reproduction steps (exact URL + payload)
 - [ ] impact (session theft, account takeover)
 - [ ] CVSS estimate
+
+## Impact
+Execute arbitrary JavaScript in victims' browsers — session/cookie theft, account takeover, UI defacement.
+
+## Remediation
+Context-aware output encoding; Content-Security-Policy; HttpOnly cookies; rely on framework auto-escaping.

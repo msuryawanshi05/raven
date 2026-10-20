@@ -19,3 +19,16 @@ passive_whitelist:
   - whois
   - dig
   - nslookup
+
+# Phase 3
+reports_dir: ./reports
+default_platform: hackerone
+
+# Scope enforcement. Empty lists = no restriction (everything allowed).
+# Fill these in per program BEFORE running against real targets.
+# Wildcard: "*.example.com" matches sub.example.com but NOT example.com itself.
+scope:
+  domains: []        # e.g. ["*.example.com", "example.com"]
+  excluded: []       # e.g. ["admin.example.com", "*.internal.example.com"]
+  ip_ranges: []      # e.g. ["10.0.0.0/8"]
+  max_severity_auto: medium

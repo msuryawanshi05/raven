@@ -27,3 +27,9 @@ that service and serve content from the victim's subdomain.
 - [ ] reproduction (CNAME + fingerprint)
 - [ ] impact (content control on victim subdomain)
 - [ ] CVSS estimate
+
+## Impact
+Full content control on a victim subdomain — phishing, cookie theft, and abuse of domain trust.
+
+## Remediation
+Remove dangling DNS records; de-provision in the correct order (remove the DNS record last); monitor CNAME targets.

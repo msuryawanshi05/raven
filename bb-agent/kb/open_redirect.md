@@ -29,3 +29,9 @@ and sometimes chaining into SSRF/OAuth token theft.
 - [ ] reproduction steps
 - [ ] impact (phishing, token leak chain)
 - [ ] CVSS estimate
+
+## Impact
+Lends credibility to phishing; can leak OAuth tokens when chained into an auth flow.
+
+## Remediation
+Allowlist redirect destinations; prefer relative paths; validate the target against a fixed set.

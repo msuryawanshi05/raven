@@ -28,3 +28,9 @@ leaking user data cross-site.
 - [ ] reproduction steps (curl with Origin)
 - [ ] impact (cross-origin data theft, requires creds reflected)
 - [ ] CVSS estimate
+
+## Impact
+Cross-origin theft of authenticated responses, exposing user data to a malicious site.
+
+## Remediation
+Reflect Access-Control-Allow-Origin only for an allowlist; never combine wildcard/null origin with Allow-Credentials: true.

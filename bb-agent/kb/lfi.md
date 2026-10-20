@@ -28,3 +28,9 @@ arbitrary files or include local files into the response.
 - [ ] reproduction steps
 - [ ] impact (file read scope, RCE potential)
 - [ ] CVSS estimate
+
+## Impact
+Disclosure of sensitive local files and, via log poisoning or PHP wrappers, potential remote code execution.
+
+## Remediation
+Keep user input out of file paths; allowlist filenames; canonicalize and confine reads to a fixed base directory.

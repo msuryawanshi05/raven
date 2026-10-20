@@ -29,3 +29,9 @@ RCE depending on the engine.
 - [ ] reproduction steps
 - [ ] impact (RCE potential, engine)
 - [ ] CVSS estimate
+
+## Impact
+Frequently leads to remote code execution on the server (engine-dependent) plus data exposure.
+
+## Remediation
+Never concatenate user input into templates; use logic-less or sandboxed engines; pass data only as context variables.

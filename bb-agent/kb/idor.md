@@ -30,3 +30,9 @@ so changing it exposes another user's data.
 - [ ] reproduction steps (two accounts)
 - [ ] impact (data exposure / modification)
 - [ ] CVSS estimate
+
+## Impact
+Access or modify other users' data (horizontal or vertical privilege escalation).
+
+## Remediation
+Enforce object-level authorization server-side on every request; use unguessable, per-user scoped references.
