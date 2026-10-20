@@ -32,3 +32,6 @@ scope:
   excluded: []       # e.g. ["admin.example.com", "*.internal.example.com"]
   ip_ranges: []      # e.g. ["10.0.0.0/8"]
   max_severity_auto: medium
+
+# Phase 4
+resume_skip_duplicates: true   # on --resume, skip commands already run

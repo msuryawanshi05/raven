@@ -17,11 +17,15 @@ VULN_META = {
     "idor": ("CWE-639", 6.5), "open_redirect": ("CWE-601", 4.7),
     "cors": ("CWE-942", 6.5), "subdomain_takeover": ("CWE-350", 8.1),
     "lfi": ("CWE-22", 7.5), "ssti": ("CWE-1336", 9.0),
+    "prompt_injection": ("CWE-1427", 8.1), "indirect_prompt_injection": ("CWE-1427", 8.1),
+    "tool_abuse": ("CWE-285", 7.5),
 }
 VULN_NAMES = {
     "xss": "XSS", "sqli": "SQL Injection", "ssrf": "SSRF", "idor": "IDOR",
     "open_redirect": "Open Redirect", "cors": "CORS Misconfiguration",
     "subdomain_takeover": "Subdomain Takeover", "lfi": "LFI", "ssti": "SSTI",
+    "prompt_injection": "Prompt Injection",
+    "indirect_prompt_injection": "Indirect Prompt Injection", "tool_abuse": "Tool Abuse",
 }
 _URL_RE = re.compile(r"https?://[^\s'\"]+")
 

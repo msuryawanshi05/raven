@@ -19,11 +19,22 @@ def _now():
 
 
 class NotesFile:
-    def __init__(self, path: Path, target: str):
+    def __init__(self, path: Path, target: str, load: bool = False):
         self.path = path
         self.target = target
         self.items = {s: [] for s in SECTIONS}
-        self._write()
+        if load and path.is_file():
+            self._load()      # resume: keep what the previous session wrote
+        else:
+            self._write()
+
+    def _load(self):
+        section = None
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                section = self._match(line[3:])
+            elif line.startswith("- ") and section:
+                self.items[section].append(line[2:].strip())
 
     def _match(self, section: str) -> str:
         s = section.strip().lower()
@@ -50,8 +61,13 @@ class NotesFile:
 
 
 class SessionLog:
-    def __init__(self, target: str):
+    def __init__(self, target: str, path=None):
         SESSIONS_DIR.mkdir(exist_ok=True)
+        if path is not None:  # resume: append to an existing session + notes
+            self.path = Path(path)
+            notes_path = self.path.with_name(self.path.stem + "_notes.md")
+            self.notes = NotesFile(notes_path, target, load=True)
+            return
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe = target.replace("/", "_").replace(":", "_")
         self.path = SESSIONS_DIR / f"{safe}_{ts}.jsonl"

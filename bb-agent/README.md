@@ -39,6 +39,19 @@ python bb_agent.py --report sessions/example.com_<ts>.jsonl --platform hackerone
 
 # check whether a host is in scope per config.yaml (exit 0 = in, 1 = out)
 python bb_agent.py --scope-check sub.example.com
+
+# hunt a list of domains (one per line, # comments); --parallel runs up to 3 at once
+python bb_agent.py --targets targets.txt --mode auto
+python bb_agent.py --targets targets.txt --parallel
+
+# Huntr 2.0 challenge: parse a briefing, auto-scope + strategy, auto-draft huntr report
+python bb_agent.py --challenge briefing.txt
+
+# resume a previous session where it left off
+python bb_agent.py --resume sessions/example.com_<ts>.jsonl
+
+# auto mode shows a live dashboard; disable it with:
+python bb_agent.py --target example.com --mode auto --no-dashboard
 ```
 
 Each recon run:
@@ -102,6 +115,36 @@ Add `--platform hackerone|bugcrowd|huntr` to also emit a platform-shaped draft
 (`reports/<prefix>_<platform>.md`), with severity mapped to the platform's scale
 (Bugcrowd P1–P4). Works offline; if `notes.md` is missing it degrades to JSONL.
 
+## Multi-target (`agent/multi.py`)
+
+`--targets <file>` hunts each in-scope domain in turn (out-of-scope ones are
+skipped), one session per target, then prints a summary table (target | findings
+| duration | status) and saves `reports/multi_<ts>_summary.md`. `--parallel` runs
+up to 3 concurrently (dashboard off; ask-mode prompts may interleave).
+
+## Huntr challenge mode (`agent/challenge.py`)
+
+`--challenge <briefing.txt>` parses a Huntr 2.0 briefing (target URL, the AI
+agent's tools, objective, guardrails), scopes the run to the challenge host,
+injects a prompt-injection / tool-abuse strategy, logs to
+`sessions/huntr_<id>_<ts>.jsonl`, and auto-drafts a Huntr report at the end.
+Adds two KB guides: `kb/prompt_injection.md`, `kb/tool_abuse.md`.
+
+## Resume (`agent/resume.py`)
+
+`--resume <jsonl>` rebuilds context from a past session (subdomains, tried
+commands, findings), **appends** to the same session file and notes, continues
+from the next step number, and (with `resume_skip_duplicates: true`) skips
+commands already run. It does not re-run the startup scope check — that target
+was approved in the original session.
+
+## Live dashboard (`ui/dashboard.py`)
+
+In `--mode auto` on a wide enough TTY, a Rich `Live` layout shows target/step,
+recon counts, current action, latest thought, finding count, and a log tail. It
+falls back to plain panels when the terminal is narrow/not a TTY, or with
+`--no-dashboard`. Imported lazily, only when auto mode needs it.
+
 ## Config (`config.yaml`)
 
 - `model` / `reconftw_path` / `max_steps`
@@ -112,6 +155,7 @@ Add `--platform hackerone|bugcrowd|huntr` to also emit a platform-shaped draft
   (reconftw auto-runs only with `-p`; curl GET-only; httpx no fuzzing)
 - `scope` — see Scope enforcement above
 - `reports_dir` / `default_platform` — report output dir and `--platform` default
+- `resume_skip_duplicates` — on `--resume`, skip commands already run
 
 ## Safety
 
@@ -126,6 +170,7 @@ Add `--platform hackerone|bugcrowd|huntr` to also emit a platform-shaped draft
 python test_passive.py   # passive classifier (auto-mode boundary)
 python test_phase2.py    # decline-feedback loop, KB injection, fallback, no-shell
 python test_phase3.py    # scope enforcer, scope-block in loop, report + formatter
+python test_phase4.py    # challenge parse, multi-target, resume, dashboard
 ```
 
 ## Errors it handles
