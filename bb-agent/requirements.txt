@@ -1,0 +1,4 @@
+ollama>=0.3.0
+click>=8.1
+rich>=13.7
+PyYAML>=6.0

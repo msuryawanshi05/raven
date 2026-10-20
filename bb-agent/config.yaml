@@ -1,0 +1,15 @@
+# bb-agent configuration
+model: llama3.1              # default ollama model (override with --model)
+reconftw_path: ~/reconftw/reconftw.sh
+max_steps: 15
+
+# Binaries auto-executed in --mode auto without asking.
+# Anything not listed here always prompts, even in auto mode.
+passive_whitelist:
+  - reconftw      # only when invoked in passive mode (-p), enforced in tools.py
+  - subfinder
+  - httpx         # probe only; fuzzing flags are rejected
+  - curl          # GET only; write/other methods are rejected
+  - whois
+  - dig
+  - nslookup
