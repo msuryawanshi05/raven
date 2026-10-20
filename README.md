@@ -1,4 +1,4 @@
-# bb-agent
+# RAVEN
 
 Agentic bug bounty assistant. Wraps [reconftw](https://github.com/six2dez/reconftw)
 passive recon with a local-LLM ReAct loop that reasons over the output, consults
