@@ -26,10 +26,11 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from agent import challenge, multi, resume, tools
+from agent import ai_target, challenge, multi, resume, tools
+from agent.injection_chains import InjectionChainBuilder
 from agent.loop import run
 from agent.memory import SessionLog
-from agent.scope import ScopeEnforcer
+from agent.scope import ScopeEnforcer, host_of
 from reporter import builder, formatter
 
 console = Console()
@@ -58,8 +59,14 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
               help="Resume a previous session JSONL.")
 @click.option("--parallel", is_flag=True, help="With --targets: up to 3 concurrent.")
 @click.option("--no-dashboard", is_flag=True, help="Disable the live dashboard in auto mode.")
+@click.option("--ai-mode", "ai_mode", is_flag=True, help="Attack an LLM target over HTTP (no recon).")
+@click.option("--owasp-only", "owasp_only", is_flag=True, help="AI mode: run only the OWASP LLM Top 10 checklist.")
+@click.option("--chain", "chain", default=None,
+              help="AI mode: run one injection chain (rag_poison|tool_response|memory_persistence).")
+@click.option("--baseline-only", "baseline_only", is_flag=True, help="AI mode: record baseline behaviour only.")
 def main(target, mode, model, config_path, report_path, platform, scope_check,
-         challenge_path, targets_path, resume_path, parallel, no_dashboard):
+         challenge_path, targets_path, resume_path, parallel, no_dashboard,
+         ai_mode, owasp_only, chain, baseline_only):
     cfg = yaml.safe_load(Path(config_path).read_text())
 
     if scope_check:
@@ -72,6 +79,11 @@ def main(target, mode, model, config_path, report_path, platform, scope_check,
         return _do_resume(cfg, resume_path, mode, model, no_dashboard)
     if targets_path:
         return _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard)
+    if ai_mode or owasp_only or chain or baseline_only:
+        if not target:
+            raise click.UsageError("AI mode needs --target <llm-url>")
+        return _do_ai_target(cfg, target, mode, model, no_dashboard,
+                             owasp_only, baseline_only, chain)
     if not target:
         raise click.UsageError(
             "need one of --target, --targets, --challenge, --resume, --report, --scope-check")
@@ -212,6 +224,37 @@ def _do_challenge(cfg, challenge_path, mode, model, no_dashboard):
     out = formatter.format_report(m, "huntr", cfg)
     console.print(f"[green]Report:[/] {m['report_path']}")
     console.print(f"[green]Huntr draft:[/] {out}")
+
+
+def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_only, chain):
+    if chain and chain not in InjectionChainBuilder.types():
+        console.print(f"[red]unknown chain '{chain}'[/]; choose from "
+                      f"{', '.join(InjectionChainBuilder.types())}")
+        raise SystemExit(1)
+
+    sr = ScopeEnforcer(cfg.get("scope", {})).check(target)
+    if not sr.allowed:
+        console.print(f"[red bold]Target out of scope:[/] {target} — {sr.reason}")
+        raise SystemExit(1)
+
+    log = SessionLog(host_of(target) or "ai_target")
+    console.print(f"[bold]bb-agent AI mode[/] target=[cyan]{target}[/] mode=[cyan]{mode}[/]")
+    console.print(f"Session log: [dim]{log.path}[/]")
+    if not (cfg.get("ai_target") or {}).get("endpoint") and "{{PAYLOAD}}" not in \
+            (cfg.get("ai_target") or {}).get("payload_template", "{{PAYLOAD}}"):
+        console.print("[yellow]warning: ai_target.payload_template has no {{PAYLOAD}} marker.[/]")
+
+    dash = _make_dash(cfg, target, mode, no_dashboard)
+    try:
+        ai_target.run(target, _model(cfg, model), cfg, log, mode=mode,
+                      owasp_only=owasp_only, baseline_only=baseline_only,
+                      chain=chain, dashboard=dash)
+    except RuntimeError as e:  # raven LLM unavailable (full ai-mode crafting)
+        console.print(f"[red]{e}[/]")
+        log.log("error", error=str(e))
+        raise SystemExit(1)
+    console.print(f"[green]AI session done.[/] Report with: "
+                  f"python bb_agent.py --report {log.path}")
 
 
 def _do_resume(cfg, resume_path, mode, model, no_dashboard):
