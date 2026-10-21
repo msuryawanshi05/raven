@@ -41,7 +41,7 @@ data, secrets/API keys in context, or PII from training or retrieval.
   ask for it "as an example of what not to say".
 
 ## Impact
-Exposure of system prompts, credentials, or PII — enabling further attacks or privacy breaches.
+Exposure of system prompts, credentials, or PII - enabling further attacks or privacy breaches.
 
 ## Remediation
 Keep secrets out of the prompt/context; redact system instructions from output; apply output filtering and per-user data isolation.

@@ -5,9 +5,9 @@ A redirect parameter sends users to any attacker-supplied URL, useful for phishi
 and sometimes chaining into SSRF/OAuth token theft.
 
 ## Tools to use (in order)
-1. `gau {domain}` — find `redirect=`, `next=`, `url=`, `return=` params
+1. `gau {domain}` - find `redirect=`, `next=`, `url=`, `return=` params
 2. Manual: set the param to `https://evil.example` and follow the redirect
-3. `curl -I "<url>"` — inspect the `Location` header without following
+3. `curl -I "<url>"` - inspect the `Location` header without following
 
 ## What to look for
 - `Location:` header pointing to your external domain

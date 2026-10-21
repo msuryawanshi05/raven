@@ -36,7 +36,7 @@ scope:
 # Phase 4
 resume_skip_duplicates: true   # on --resume, skip commands already run
 
-# Phase 5 — AI target mode (--ai-mode). endpoint is overridden by --target.
+# Phase 5 - AI target mode (--ai-mode). endpoint is overridden by --target.
 ai_target:
   endpoint: ""
   method: POST

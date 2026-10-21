@@ -2,7 +2,7 @@
 
 ## What it is
 Attacker-controlled text makes an LLM agent ignore its real instructions and follow
-the attacker's instead — either directly (via the user message) or indirectly (via
+the attacker's instead - either directly (via the user message) or indirectly (via
 content the agent reads from a tool, document, or web page).
 
 ## Tools to use (in order)

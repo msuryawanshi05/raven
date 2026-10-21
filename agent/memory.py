@@ -51,7 +51,7 @@ class NotesFile:
         self._write()
 
     def _write(self):
-        lines = [f"# Recon notes — {self.target}", ""]
+        lines = [f"# Recon notes - {self.target}", ""]
         for s in SECTIONS:
             lines.append(f"## {s}")
             lines += ([f"- {t}" for t in self.items[s]] if self.items[s]

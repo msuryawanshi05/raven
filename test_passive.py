@@ -1,4 +1,4 @@
-"""Self-check for the passive classifier — the --mode auto security boundary."""
+"""Self-check for the passive classifier - the --mode auto security boundary."""
 from agent.tools import is_passive
 
 WL = ["reconftw", "subfinder", "httpx", "curl", "whois", "dig", "nslookup"]

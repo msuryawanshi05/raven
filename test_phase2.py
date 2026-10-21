@@ -1,4 +1,4 @@
-"""Phase 2 regression checks — run with a scripted fake LLM (no ollama needed).
+"""Phase 2 regression checks - run with a scripted fake LLM (no ollama needed).
 
 Covers the reviewer's two load-bearing concerns plus the new Phase 2 paths:
 - a declined command feeds back to the LLM and the loop continues (not exit)

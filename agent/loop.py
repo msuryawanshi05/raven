@@ -3,7 +3,7 @@
 Output goes through a `view` object so the same loop drives either plain Rich
 panels (default / ask mode) or the live dashboard (auto mode). Phase 4 added the
 optional kwargs on run(): extra_system, seed_context, start_step, skip_commands,
-dashboard — all default to the Phase 1-3 behaviour.
+dashboard - all default to the Phase 1-3 behaviour.
 """
 import re
 
@@ -186,7 +186,7 @@ def run(target, recon_summary, model, mode, config, log,
             tgt = scope_command_target(action, action_input, target)
             sr = enforcer.check(tgt)
             if not sr.allowed:
-                view.line(f"[red bold]SCOPE BLOCK:[/] {tgt} — {sr.reason}")
+                view.line(f"[red bold]SCOPE BLOCK:[/] {tgt} - {sr.reason}")
                 log.log("scope_block", step=step, target=tgt, reason=sr.reason,
                         command=action_input)
                 messages.append({"role": "user",
@@ -213,7 +213,7 @@ def run(target, recon_summary, model, mode, config, log,
                                        view.line, domain=target,
                                        url=tools.url_in(action_input), scope=enforcer)
             except ScopeViolation as e:  # safety net (e.g. a host the pre-check missed)
-                view.line(f"[red bold]SCOPE BLOCK:[/] {e.target} — {e.reason}")
+                view.line(f"[red bold]SCOPE BLOCK:[/] {e.target} - {e.reason}")
                 log.log("scope_block", step=step, target=e.target, reason=e.reason,
                         command=action_input)
                 messages.append({"role": "user",
@@ -225,7 +225,7 @@ def run(target, recon_summary, model, mode, config, log,
                 log.notes.add("Potential Vulns",
                               f"[auto:'{finding}'] after `{action_input}`")
             if result["status"] == "failed":
-                log.notes.add("Dead Ends", f"`{action_input}` — all fallbacks failed")
+                log.notes.add("Dead Ends", f"`{action_input}` - all fallbacks failed")
 
             view.panel(result["output"][:2000],
                        f"OBSERVATION ({result['status']})", "blue")

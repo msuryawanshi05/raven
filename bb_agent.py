@@ -127,7 +127,7 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True):
     reconftw = os.path.expanduser(cfg["reconftw_path"])
     if not os.path.isfile(reconftw):
         if verbose:
-            console.print(f"[red]reconftw not found at {reconftw}[/] — "
+            console.print(f"[red]reconftw not found at {reconftw}[/] - "
                           "install: https://github.com/six2dez/reconftw")
         log.log("error", error=f"reconftw not found at {reconftw}")
         return summary(0, "no_reconftw", log)
@@ -153,7 +153,7 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True):
 def _do_scope_check(cfg, domain):
     sr = ScopeEnforcer(cfg.get("scope", {})).check(domain)
     tag = "[green]IN SCOPE[/]" if sr.allowed else "[red]OUT OF SCOPE[/]"
-    console.print(f"{tag}: {domain} — {sr.reason}")
+    console.print(f"{tag}: {domain} - {sr.reason}")
     raise SystemExit(0 if sr.allowed else 1)
 
 
@@ -164,7 +164,7 @@ def _do_report(cfg, report_path, platform):
     model = builder.build(report_path, cfg)
     console.print(f"[green]Report written:[/] {model['report_path']}")
     if not model["notes_found"]:
-        console.print("[yellow]note: notes.md not found — built from JSONL only.[/]")
+        console.print("[yellow]note: notes.md not found - built from JSONL only.[/]")
     if platform:
         name = cfg.get("default_platform", "hackerone") if platform == "__default__" else platform
         name = _PLATFORM_ALIAS.get(name.lower(), name.lower())
@@ -180,7 +180,7 @@ def _do_recon(cfg, target, mode, model, no_dashboard):
     res = hunt_one(cfg, target, mode, model, no_dashboard)
     if res["status"] in ("out_of_scope", "no_reconftw", "llm_error"):
         raise SystemExit(1)
-    console.print(f"[green]done[/] — {res['findings']} potential finding(s). "
+    console.print(f"[green]done[/] - {res['findings']} potential finding(s). "
                   f"Report with: python bb_agent.py --report {res['session']}")
 
 
@@ -234,7 +234,7 @@ def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_o
 
     sr = ScopeEnforcer(cfg.get("scope", {})).check(target)
     if not sr.allowed:
-        console.print(f"[red bold]Target out of scope:[/] {target} — {sr.reason}")
+        console.print(f"[red bold]Target out of scope:[/] {target} - {sr.reason}")
         raise SystemExit(1)
 
     log = SessionLog(host_of(target) or "ai_target")

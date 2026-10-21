@@ -1,4 +1,4 @@
-"""Scope enforcement — hard block before any command runs out of scope.
+"""Scope enforcement - hard block before any command runs out of scope.
 
 Config (config.yaml):
     scope:

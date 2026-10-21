@@ -5,10 +5,10 @@ Untrusted input is reflected or stored into a page without proper encoding, lett
 an attacker run JavaScript in a victim's browser session.
 
 ## Tools to use (in order)
-1. `gau {domain}` or `waybackurls {domain}` — collect URLs with parameters
-2. `httpx -silent` — confirm which are live
+1. `gau {domain}` or `waybackurls {domain}` - collect URLs with parameters
+2. `httpx -silent` - confirm which are live
 3. Manual: inject a unique marker, e.g. `?q=bbagentXSS1` and grep the response for it reflected unencoded
-4. `dalfox url <url>` — automated reflected XSS testing (ask before running; active)
+4. `dalfox url <url>` - automated reflected XSS testing (ask before running; active)
 
 ## What to look for
 - your marker reflected inside HTML/JS/attribute context without encoding
@@ -34,7 +34,7 @@ an attacker run JavaScript in a victim's browser session.
 - [ ] CVSS estimate
 
 ## Impact
-Execute arbitrary JavaScript in victims' browsers — session/cookie theft, account takeover, UI defacement.
+Execute arbitrary JavaScript in victims' browsers - session/cookie theft, account takeover, UI defacement.
 
 ## Remediation
 Context-aware output encoding; Content-Security-Policy; HttpOnly cookies; rely on framework auto-escaping.

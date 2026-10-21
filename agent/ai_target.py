@@ -164,7 +164,7 @@ def run(target_url, model, config, log, mode="ask", owasp_only=False,
                 break
             if item.passive:
                 checker.mark_tested(item, "manual")
-                view.line(f"[dim]{item.id} {item.name}: passive — manual review[/]")
+                view.line(f"[dim]{item.id} {item.name}: passive - manual review[/]")
                 continue
 
             payload = _craft(item, messages, model, baseline, use_llm=not owasp_only)

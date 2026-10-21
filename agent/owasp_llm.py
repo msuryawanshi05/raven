@@ -1,7 +1,7 @@
 """OWASP LLM Top 10 (v2025) checklist for AI-target engagements.
 
 Drives what to test next in ai-mode and produces a coverage report. Passive items
-(training-data/supply-chain/model-theft) are not probed over the chat interface —
+(training-data/supply-chain/model-theft) are not probed over the chat interface -
 they are marked 'manual' for human review.
 """
 from dataclasses import dataclass, field
@@ -67,7 +67,7 @@ class OWASPChecker:
         return None
 
     def evaluate(self, item: OWASPItem, response: str, change=None) -> str:
-        """potential | pass — based on indicators and the behaviour signal."""
+        """potential | pass - based on indicators and the behaviour signal."""
         if change is not None and change.signal in ("CRITICAL", "HIGH"):
             return "potential"
         for ind in item.success_indicators:

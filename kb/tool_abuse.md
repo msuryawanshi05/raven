@@ -2,7 +2,7 @@
 
 ## What it is
 Coercing an AI agent into invoking its available tools/functions in unintended ways
-— e.g. calling `transfer_funds` or `delete_account` without the required user
+- e.g. calling `transfer_funds` or `delete_account` without the required user
 consent or authorization. Often chained from prompt injection.
 
 ## Tools to use (in order)
@@ -34,7 +34,7 @@ consent or authorization. Often chained from prompt injection.
 - [ ] CVSS estimate
 
 ## Impact
-Unauthorized privileged actions performed through the agent — fund transfer, data deletion, message sending — without user consent.
+Unauthorized privileged actions performed through the agent - fund transfer, data deletion, message sending - without user consent.
 
 ## Remediation
 Enforce authorization and consent server-side per tool; validate tool arguments; never let model output alone authorize a sensitive action; log and rate-limit privileged tool calls.

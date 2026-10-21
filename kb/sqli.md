@@ -5,9 +5,9 @@ User input reaches a SQL query unsanitised, letting an attacker alter the query 
 read/modify data or bypass auth.
 
 ## Tools to use (in order)
-1. `gau {domain}` — find parameterised endpoints
+1. `gau {domain}` - find parameterised endpoints
 2. Manual: append `'` and a balanced `' AND 1=1-- -` / `' AND 1=2-- -` pair; compare responses
-3. `sqlmap -u "<url>" --batch --level 2` — confirm (active; always ask first)
+3. `sqlmap -u "<url>" --batch --level 2` - confirm (active; always ask first)
 
 ## What to look for
 - `error in your SQL syntax`, ODBC/PDO exceptions, stack traces

@@ -5,7 +5,7 @@ A file-path parameter is used without sanitisation, letting an attacker read
 arbitrary files or include local files into the response.
 
 ## Tools to use (in order)
-1. `gau {domain}` — find `file=`, `page=`, `path=`, `template=` params
+1. `gau {domain}` - find `file=`, `page=`, `path=`, `template=` params
 2. Manual: `?file=../../../../etc/passwd` and encoded variants
 3. `ffuf` with an LFI wordlist on the parameter (active; ask first)
 

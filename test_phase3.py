@@ -9,7 +9,6 @@ PROJ = str(Path(__file__).resolve().parent)
 if PROJ not in sys.path:
     sys.path.insert(0, PROJ)
 
-from agent import scope as scope_mod  # noqa: E402
 from agent.scope import ScopeEnforcer, command_target  # noqa: E402
 from reporter import builder, formatter  # noqa: E402
 
@@ -64,7 +63,7 @@ def test_loop_blocks_out_of_scope():
 
     ran = []
     tools.run_command = lambda c: (ran.append(c), ("out", True))[1]  # spy
-    loop.console.input = lambda *a, **k: "y"  # would approve — must never be reached
+    loop.console.input = lambda *a, **k: "y"  # would approve - must never be reached
     memory.SESSIONS_DIR = Path(tempfile.mkdtemp())
     log = memory.SessionLog("scope.test")
     cfg = {"passive_whitelist": ["curl"], "max_steps": 4, "kb_path": "./kb",

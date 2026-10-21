@@ -6,7 +6,7 @@ that service and serve content from the victim's subdomain.
 
 ## Tools to use (in order)
 1. `subfinder -d {domain}` then `httpx -silent` to find live/dead hosts
-2. `dig <sub>` / `nslookup <sub>` — inspect CNAME targets
+2. `dig <sub>` / `nslookup <sub>` - inspect CNAME targets
 3. `nuclei -t takeovers` or `subzy run --target <sub>` (confirm fingerprint)
 
 ## What to look for
@@ -29,7 +29,7 @@ that service and serve content from the victim's subdomain.
 - [ ] CVSS estimate
 
 ## Impact
-Full content control on a victim subdomain — phishing, cookie theft, and abuse of domain trust.
+Full content control on a victim subdomain - phishing, cookie theft, and abuse of domain trust.
 
 ## Remediation
 Remove dangling DNS records; de-provision in the correct order (remove the DNS record last); monitor CNAME targets.

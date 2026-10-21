@@ -43,7 +43,7 @@ ignore its system prompt, reveal hidden data, or perform disallowed actions.
   splitting the instruction across turns, translation requests.
 
 ## Impact
-The assistant abandons its guardrails on attacker command — data leakage, forbidden actions, or downstream abuse.
+The assistant abandons its guardrails on attacker command - data leakage, forbidden actions, or downstream abuse.
 
 ## Remediation
 Isolate and label untrusted input; enforce an instruction hierarchy; filter inputs/outputs; require confirmation for sensitive actions.

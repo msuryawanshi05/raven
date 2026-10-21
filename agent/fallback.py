@@ -1,6 +1,6 @@
 """Failure router: fallback chains per tool.
 
-Pure policy — no subprocess here. tools.execute() runs the commands; this module
+Pure policy - no subprocess here. tools.execute() runs the commands; this module
 only decides what to try next and which suggestions are human-only ("manual:").
 """
 import os
