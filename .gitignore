@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+sessions/
+reports/
+.env
+*.log

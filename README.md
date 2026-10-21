@@ -52,6 +52,12 @@ python bb_agent.py --resume sessions/example.com_<ts>.jsonl
 
 # auto mode shows a live dashboard; disable it with:
 python bb_agent.py --target example.com --mode auto --no-dashboard
+
+# AI target mode: attack an LLM over HTTP instead of recon
+python bb_agent.py --target https://chat.example.com --ai-mode --mode auto
+python bb_agent.py --target https://chat.example.com --owasp-only --mode auto
+python bb_agent.py --target https://chat.example.com --baseline-only
+python bb_agent.py --target https://chat.example.com --chain rag_poison --mode auto
 ```
 
 Each recon run:
@@ -145,6 +151,34 @@ recon counts, current action, latest thought, finding count, and a log tail. It
 falls back to plain panels when the terminal is narrow/not a TTY, or with
 `--no-dashboard`. Imported lazily, only when auto mode needs it.
 
+## AI target mode (`agent/ai_target.py`)
+
+For LLM-based targets (chatbots / assistant APIs), `--ai-mode` replaces reconftw
+with an HTTP interaction layer: each action is a prompt POSTed to the target, and
+the reply is scored instead of parsed as a shell command.
+
+Flow: send a baseline prompt and build a target profile → walk the **OWASP LLM
+Top 10** checklist (`agent/owasp_llm.py`) → for each item, craft a payload (raven's
+LLM in full `--ai-mode`, or the canned probe with `--owasp-only`), send it, and run
+the **behaviour detector** (`agent/behavior.py`) on the response. A compromise
+signal (complied-after-refusal, indicator match, tool executed) is logged as
+`behavior_change` and recorded as a potential finding; on a weakness it escalates
+with an **indirect injection chain** (`agent/injection_chains.py`:
+`rag_poison` / `tool_response` / `memory_persistence`). An OWASP coverage table is
+appended to `notes.md` at the end.
+
+- `--owasp-only` — run just the checklist (deterministic, no raven LLM needed).
+- `--baseline-only` — record baseline behaviour and the target profile, no attack.
+- `--chain <type>` — run one injection chain after the baseline.
+- Target host is scope-checked at startup; `request_delay` throttles requests.
+- The target endpoint comes from `--target` (overrides `ai_target.endpoint`);
+  shape the request with `ai_target.payload_template` (`{{PAYLOAD}}` is JSON-escaped)
+  and `response_path` (dot-path to the reply).
+
+Added KB guides: `kb/llm01_prompt_injection.md`, `kb/llm06_data_disclosure.md`,
+`kb/llm07_plugin_abuse.md`, `kb/llm08_excessive_agency.md` (each with Injection
+Chains, Win Condition, and Evasion Techniques sections).
+
 ## Config (`config.yaml`)
 
 - `model` / `reconftw_path` / `max_steps`
@@ -156,6 +190,8 @@ falls back to plain panels when the terminal is narrow/not a TTY, or with
 - `scope` — see Scope enforcement above
 - `reports_dir` / `default_platform` — report output dir and `--platform` default
 - `resume_skip_duplicates` — on `--resume`, skip commands already run
+- `ai_target` — endpoint/method/headers/payload_template/response_path/request_delay
+  for `--ai-mode` (see AI target mode above)
 
 ## Safety
 
@@ -171,6 +207,7 @@ python test_passive.py   # passive classifier (auto-mode boundary)
 python test_phase2.py    # decline-feedback loop, KB injection, fallback, no-shell
 python test_phase3.py    # scope enforcer, scope-block in loop, report + formatter
 python test_phase4.py    # challenge parse, multi-target, resume, dashboard
+python test_phase5.py    # behaviour detector, OWASP checker, chains, AI-target loop
 ```
 
 ## Errors it handles
