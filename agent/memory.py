@@ -63,6 +63,7 @@ class NotesFile:
 class SessionLog:
     def __init__(self, target: str, path=None):
         SESSIONS_DIR.mkdir(exist_ok=True)
+        self.notifier = None  # set by bb_agent when --notify is used
         if path is not None:  # resume: append to an existing session + notes
             self.path = Path(path)
             notes_path = self.path.with_name(self.path.stem + "_notes.md")
@@ -76,6 +77,11 @@ class SessionLog:
     def _append(self, record: dict):
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if self.notifier and (record.get("finding") or record.get("kind") == "behavior_change"):
+            try:
+                self.notifier(record)
+            except Exception:  # a failed notification must never abort the hunt
+                pass
         return record
 
     def log(self, kind: str, **fields):

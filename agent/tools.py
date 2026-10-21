@@ -5,10 +5,12 @@ Two security boundaries live here:
 - no shell: commands run via shlex.split (list form), never shell=True, so
   chaining/injection (;, &&, |, backticks) cannot execute.
 """
+import fnmatch
 import os
 import re
 import shlex
 import subprocess
+import time
 
 from . import fallback
 from . import scope as scope_mod
@@ -38,6 +40,28 @@ def run_reconftw(reconftw_path: str, action_input: str):
     if not os.path.isfile(path):
         return f"[reconftw not found at {path}]", False
     return _run(["bash", path, *shlex.split(action_input)])
+
+
+def run_nuclei(list_file: str, severity="medium,high,critical"):
+    """Active vuln scan over a host-list file. Returns (output, ok); ok=False with
+    a 'command not found' message if nuclei is not installed."""
+    return _run(["nuclei", "-l", list_file, "-severity", severity, "-silent"])
+
+
+def _rate_delay(cfg, host) -> float:
+    rl = cfg.get("rate_limits") or {}
+    for pattern, delay in (rl.get("per_target") or {}).items():
+        if fnmatch.fnmatch(host or "", pattern):
+            return delay
+    return rl.get("default_delay", 0) or 0
+
+
+def _rate_sleep(cfg, host, announce=None):
+    d = _rate_delay(cfg, host)
+    if d and d > 0:
+        if announce:
+            announce(f"[dim]rate limit: waiting {d}s for {host}[/]")
+        time.sleep(d)
 
 
 def run_command(action_input: str):
@@ -106,12 +130,13 @@ def execute(action, action_input, cfg, approve, announce, domain="", url="", sco
     scope.ScopeViolation if blocked) and before each fallback (out-of-scope
     fallbacks are skipped, not run).
     """
+    tgt = scope_mod.command_target(action, action_input, domain)
     if scope is not None:
-        sr = scope.check(scope_mod.command_target(action, action_input, domain))
+        sr = scope.check(tgt)
         if not sr.allowed:
-            raise scope_mod.ScopeViolation(
-                scope_mod.command_target(action, action_input, domain), sr.reason)
+            raise scope_mod.ScopeViolation(tgt, sr.reason)
 
+    _rate_sleep(cfg, tgt, announce)
     if action == "run_reconftw":
         output, ok = run_reconftw(cfg["reconftw_path"], action_input)
     else:
@@ -142,6 +167,7 @@ def execute(action, action_input, cfg, approve, announce, domain="", url="", sco
         if not approve(cmd):
             attempts.append({"command": cmd, "skipped": True})
             continue
+        _rate_sleep(cfg, scope_mod.command_target("run_command", cmd, domain), announce)
         fb_out, fb_ok = run_command(cmd)
         tried += 1
         attempts.append({"command": cmd, "output": fb_out, "ok": fb_ok})

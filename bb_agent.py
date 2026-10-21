@@ -10,7 +10,9 @@ Modes:
   scope      python bb_agent.py --scope-check sub.example.com
 """
 import os
+import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -26,11 +28,11 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from agent import ai_target, challenge, multi, resume, tools
+from agent import ai_target, challenge, multi, notify as notify_mod, resume, tools
 from agent.injection_chains import InjectionChainBuilder
 from agent.loop import run
 from agent.memory import SessionLog
-from agent.scope import ScopeEnforcer, host_of
+from agent.scope import PASSIVE_SERVICES, ScopeEnforcer, host_of
 from reporter import builder, formatter
 
 console = Console()
@@ -64,9 +66,11 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
 @click.option("--chain", "chain", default=None,
               help="AI mode: run one injection chain (rag_poison|tool_response|memory_persistence).")
 @click.option("--baseline-only", "baseline_only", is_flag=True, help="AI mode: record baseline behaviour only.")
+@click.option("--notify", "notify", type=click.Choice(["telegram", "discord"]), default=None,
+              help="Send a message on each finding (needs notify.<platform> in config).")
 def main(target, mode, model, config_path, report_path, platform, scope_check,
          challenge_path, targets_path, resume_path, parallel, no_dashboard,
-         ai_mode, owasp_only, chain, baseline_only):
+         ai_mode, owasp_only, chain, baseline_only, notify):
     cfg = yaml.safe_load(Path(config_path).read_text())
 
     if scope_check:
@@ -74,20 +78,20 @@ def main(target, mode, model, config_path, report_path, platform, scope_check,
     if report_path:
         return _do_report(cfg, report_path, platform)
     if challenge_path:
-        return _do_challenge(cfg, challenge_path, mode, model, no_dashboard)
+        return _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify)
     if resume_path:
-        return _do_resume(cfg, resume_path, mode, model, no_dashboard)
+        return _do_resume(cfg, resume_path, mode, model, no_dashboard, notify)
     if targets_path:
-        return _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard)
+        return _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify)
     if ai_mode or owasp_only or chain or baseline_only:
         if not target:
             raise click.UsageError("AI mode needs --target <llm-url>")
         return _do_ai_target(cfg, target, mode, model, no_dashboard,
-                             owasp_only, baseline_only, chain)
+                             owasp_only, baseline_only, chain, notify)
     if not target:
         raise click.UsageError(
             "need one of --target, --targets, --challenge, --resume, --report, --scope-check")
-    _do_recon(cfg, target, mode, model, no_dashboard)
+    _do_recon(cfg, target, mode, model, no_dashboard, notify)
 
 
 # --- helpers ----------------------------------------------------------------
@@ -107,7 +111,55 @@ def _count_findings(log):
     return len(log.notes.items["Potential Vulns"])
 
 
-def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True):
+def _attach_notify(log, cfg, platform, target):
+    if not platform:
+        return
+    fn = notify_mod.build_notifier(cfg, platform, target)
+    if fn:
+        log.notifier = fn
+    else:
+        console.print(f"[yellow]--notify {platform}: not configured in config.yaml; skipping.[/]")
+
+
+def _nuclei_hosts(recon, target, cfg):
+    """In-scope hosts under the target's domain, pulled from the recon output."""
+    base = host_of(target)
+    found = set(re.findall(r"\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b",
+                           (recon or "").lower()))
+    found = {h for h in found if h == base or h.endswith("." + base)}
+    found.add(base)
+    enforcer = ScopeEnforcer(cfg.get("scope", {}))
+    return sorted(h for h in found
+                  if h not in PASSIVE_SERVICES and enforcer.check(h).allowed)
+
+
+def _nuclei_scan(cfg, target, recon, log, verbose):
+    """Auto active-scan after passive recon. Scope-filtered; skipped if nuclei
+    is absent. Returns output text (fed to the LLM) or ''."""
+    nconf = cfg.get("nuclei") or {}
+    if not nconf.get("enabled", True):
+        return ""
+    hosts = _nuclei_hosts(recon, target, cfg)
+    if not hosts:
+        return ""
+    fd, path = tempfile.mkstemp(prefix="raven_nuclei_", suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(hosts))
+    try:
+        if verbose:
+            console.print(f"[bold]nuclei[/] scanning {len(hosts)} in-scope host(s)...")
+        out, ok = tools.run_nuclei(path, nconf.get("severity", "medium,high,critical"))
+    finally:
+        os.unlink(path)
+    if not ok and "command not found" in out:
+        console.print("[yellow]nuclei not installed; skipping active scan.[/]")
+        log.log("nuclei", status="skipped", reason="not installed")
+        return ""
+    log.log("nuclei", status="done" if ok else "error", hosts=len(hosts), output=out[:500])
+    return out
+
+
+def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True, notify=None):
     """Run the full hunt for one target. Returns a summary dict for multi-target."""
     t0 = time.time()
 
@@ -121,6 +173,7 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True):
         return summary(0, "out_of_scope", None)
 
     log = SessionLog(target)
+    _attach_notify(log, cfg, notify, target)
     if verbose:
         console.print(f"[bold]hunt[/] [cyan]{target}[/] ({mode}) -> [dim]{log.path}[/]")
 
@@ -137,10 +190,13 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True):
     recon, ok = tools.run_reconftw(reconftw, f"-d {target} -p")
     log.log("recon_seed", target=target, status="success" if ok else "failed", output=recon)
 
+    nuclei_out = _nuclei_scan(cfg, target, recon, log, verbose)
+    seed = recon + (f"\n\n[nuclei results]\n{nuclei_out}" if nuclei_out else "")
+
     dash = _make_dash(cfg, target, mode, no_dashboard)
     status = "done"
     try:
-        run(target, recon, _model(cfg, model), mode, cfg, log, dashboard=dash)
+        run(target, seed, _model(cfg, model), mode, cfg, log, dashboard=dash)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         log.log("error", error=str(e))
@@ -176,15 +232,15 @@ def _do_report(cfg, report_path, platform):
         console.print(f"[green]{name} draft written:[/] {out}")
 
 
-def _do_recon(cfg, target, mode, model, no_dashboard):
-    res = hunt_one(cfg, target, mode, model, no_dashboard)
+def _do_recon(cfg, target, mode, model, no_dashboard, notify=None):
+    res = hunt_one(cfg, target, mode, model, no_dashboard, notify=notify)
     if res["status"] in ("out_of_scope", "no_reconftw", "llm_error"):
         raise SystemExit(1)
     console.print(f"[green]done[/] - {res['findings']} potential finding(s). "
                   f"Report with: python bb_agent.py --report {res['session']}")
 
 
-def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard):
+def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify=None):
     targets = multi.load_targets(targets_path)
     if not targets:
         console.print(f"[red]no targets in {targets_path}[/]")
@@ -193,13 +249,13 @@ def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard):
     if parallel:
         console.print("[yellow]--parallel: dashboard off; ask-mode prompts may interleave.[/]")
     results = multi.run_all(targets, lambda t: hunt_one(cfg, t, mode, _model(cfg, model),
-                                                        no_dashboard=nd, verbose=True),
+                                                        no_dashboard=nd, verbose=True, notify=notify),
                             parallel=parallel)
     multi.render_table(results, console)
     console.print(f"[green]summary saved:[/] {multi.save_summary(results, cfg)}")
 
 
-def _do_challenge(cfg, challenge_path, mode, model, no_dashboard):
+def _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify=None):
     text = Path(challenge_path).read_text(encoding="utf-8")
     parsed = challenge.parse_briefing(text)
     cfg = challenge.configure(cfg, parsed)
@@ -209,8 +265,9 @@ def _do_challenge(cfg, challenge_path, mode, model, no_dashboard):
     console.print(f"objective: {parsed['objective']}")
 
     log = SessionLog(f"huntr_{parsed['challenge_id']}")
-    console.print(f"Session log: [dim]{log.path}[/]")
     target = parsed["target_host"] or parsed["url"] or f"huntr_{parsed['challenge_id']}"
+    _attach_notify(log, cfg, notify, target)
+    console.print(f"Session log: [dim]{log.path}[/]")
     dash = _make_dash(cfg, target, mode, no_dashboard)
     try:
         run(target, f"Challenge briefing:\n{text}", _model(cfg, model), mode, cfg, log,
@@ -226,7 +283,7 @@ def _do_challenge(cfg, challenge_path, mode, model, no_dashboard):
     console.print(f"[green]Huntr draft:[/] {out}")
 
 
-def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_only, chain):
+def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_only, chain, notify=None):
     if chain and chain not in InjectionChainBuilder.types():
         console.print(f"[red]unknown chain '{chain}'[/]; choose from "
                       f"{', '.join(InjectionChainBuilder.types())}")
@@ -238,6 +295,7 @@ def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_o
         raise SystemExit(1)
 
     log = SessionLog(host_of(target) or "ai_target")
+    _attach_notify(log, cfg, notify, target)
     console.print(f"[bold]bb-agent AI mode[/] target=[cyan]{target}[/] mode=[cyan]{mode}[/]")
     console.print(f"Session log: [dim]{log.path}[/]")
     if not (cfg.get("ai_target") or {}).get("endpoint") and "{{PAYLOAD}}" not in \
@@ -257,12 +315,13 @@ def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_o
                   f"python bb_agent.py --report {log.path}")
 
 
-def _do_resume(cfg, resume_path, mode, model, no_dashboard):
+def _do_resume(cfg, resume_path, mode, model, no_dashboard, notify=None):
     if not Path(resume_path).is_file():
         console.print(f"[red]session file not found: {resume_path}[/]")
         raise SystemExit(1)
     st = resume.load(resume_path)
     log = SessionLog(st["target"], path=resume_path)  # append to the same session
+    _attach_notify(log, cfg, notify, st["target"])
     console.print(f"[bold]Resuming[/] [cyan]{st['target']}[/] from step "
                   f"{st['last_step'] + 1} ({len(st['tried'])} commands already tried)")
     skip = st["tried"] if cfg.get("resume_skip_duplicates", True) else None

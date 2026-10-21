@@ -58,6 +58,9 @@ python bb_agent.py --target https://chat.example.com --ai-mode --mode auto
 python bb_agent.py --target https://chat.example.com --owasp-only --mode auto
 python bb_agent.py --target https://chat.example.com --baseline-only
 python bb_agent.py --target https://chat.example.com --chain rag_poison --mode auto
+
+# send a message on each finding (needs notify.<platform> filled in config.yaml)
+python bb_agent.py --target example.com --mode auto --notify telegram
 ```
 
 Each recon run:
@@ -186,6 +189,41 @@ Added KB guides: `kb/llm01_prompt_injection.md`, `kb/llm06_data_disclosure.md`,
 `kb/llm07_plugin_abuse.md`, `kb/llm08_excessive_agency.md`. Each adds Injection
 Chains, Win Condition, and Evasion Techniques sections to the standard format.
 
+## Rate limits, nuclei, notifications (Phase 6)
+
+Rate limits throttle requests per target. `tools.execute` waits before each
+command and fallback, using the first `rate_limits.per_target` wildcard the host
+matches, otherwise `rate_limits.default_delay`. With no `rate_limits` block the
+delay is 0, so older configs are unchanged.
+
+```yaml
+rate_limits:
+  default_delay: 2
+  per_target:
+    "*.hackerone.com": 5
+    "*.bugcrowd.com": 3
+```
+
+After passive recon, `hunt_one` runs nuclei (`nuclei -l <hosts> -severity ...`)
+against the in-scope hosts it pulls from the recon output, and feeds the results
+to the LLM as part of the seed context. The host list is filtered to the target's
+own domain and run through the scope check first, and passive OSINT services are
+excluded, so nuclei never scans an out-of-scope host. nuclei is an active scanner;
+set `nuclei.enabled: false` to turn it off. If nuclei is not installed the scan is
+skipped with a warning.
+
+`--notify telegram` or `--notify discord` sends a one-line message on every
+finding, taken from each finding record `memory.py` writes (a `log_step` with a
+`finding`, or a `behavior_change`). The message carries the target, vuln class,
+severity, and endpoint. A failed send is swallowed so it never aborts a hunt; an
+unconfigured platform prints one warning and is skipped.
+
+```yaml
+notify:
+  telegram: { bot_token: "", chat_id: "" }
+  discord:  { webhook_url: "" }
+```
+
 ## Config (`config.yaml`)
 
 - `model` / `reconftw_path` / `max_steps`
@@ -199,6 +237,7 @@ Chains, Win Condition, and Evasion Techniques sections to the standard format.
 - `resume_skip_duplicates`: on `--resume`, skip commands already run
 - `ai_target`: endpoint, method, headers, payload_template, response_path, and
   request_delay for `--ai-mode` (see AI target mode above)
+- `rate_limits` / `nuclei` / `notify`: see the Phase 6 section above
 
 ## Safety
 
@@ -215,6 +254,7 @@ python test_phase2.py    # decline-feedback loop, KB injection, fallback, no-she
 python test_phase3.py    # scope enforcer, scope-block in loop, report + formatter
 python test_phase4.py    # challenge parse, multi-target, resume, dashboard
 python test_phase5.py    # behaviour detector, OWASP checker, chains, AI-target loop
+python test_phase6.py    # per-target rate limits, nuclei integration, notify
 ```
 
 ## Errors it handles

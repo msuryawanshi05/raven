@@ -68,3 +68,27 @@ Unix convention rather than override it.
 `--owasp-only` fires each OWASP item's canned probe without calling raven's LLM,
 so the checklist runs offline without ollama. Full `--ai-mode` uses the LLM to
 craft and escalate payloads.
+
+## Nuclei auto-scan is active but scope-filtered (Phase 6)
+
+Spec: "called automatically after reconftw passive completes."
+
+Build: nuclei runs automatically in `hunt_one`, but nuclei is an active scanner,
+not passive like the rest of the seed step. To keep the scope guarantee, the host
+list it scans is pulled from the recon output, bounded to the target's own domain,
+filtered through the scope check, and stripped of PASSIVE_SERVICES, so it never
+hits an out-of-scope host. It can be turned off with `nuclei.enabled: false`, and
+it skips with a warning if nuclei is not installed. The automatic run is a timing
+choice; it does not bypass the scope boundary or the human approval that still
+gates everything the LLM proposes afterward.
+
+The command is `nuclei -l <file> -severity ...`. The spec wrote `-t
+<subdomain_list_file>`, but in nuclei `-t` selects templates and `-l` takes the
+host-list file, so the build uses `-l` to match the stated intent.
+
+## Notifications fire from the log write path (Phase 6)
+
+`--notify` attaches a callable to `SessionLog`. `memory.py:_append` fires it on any
+record that carries a `finding` or is a `behavior_change`, which is the single
+place both `loop.py` and `ai_target.py` record findings. A send failure is
+caught and ignored so a down webhook never aborts a hunt.

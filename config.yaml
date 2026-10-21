@@ -44,3 +44,21 @@ ai_target:
   payload_template: '{"message": "{{PAYLOAD}}"}'  # {{PAYLOAD}} is JSON-escaped in
   response_path: "response.text"                # dot-path to the reply in the JSON response
   request_delay: 2                              # seconds between requests (rate-limit safety)
+
+# Phase 6 - real-hunt utilities
+rate_limits:
+  default_delay: 2          # seconds to wait before each command
+  per_target:               # wildcard host -> delay (overrides default)
+    "*.hackerone.com": 5
+    "*.bugcrowd.com": 3
+
+nuclei:
+  enabled: true             # auto-scan in-scope hosts after passive recon
+  severity: "medium,high,critical"
+
+notify:                     # --notify telegram|discord fires on each finding
+  telegram:
+    bot_token: ""
+    chat_id: ""
+  discord:
+    webhook_url: ""
