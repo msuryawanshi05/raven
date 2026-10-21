@@ -115,3 +115,41 @@ fallback the spec allows.
 record that carries a `finding` or is a `behavior_change`, which is the single
 place both `loop.py` and `ai_target.py` record findings. A send failure is
 caught and ignored so a down webhook never aborts a hunt.
+
+## FastAPI over Flask (Phase 8)
+
+FastAPI has native async and first-class WebSocket support, so the live hunt
+stream needs no extra library (Flask would need flask-sock or flask-socketio).
+The REST endpoints and the WebSocket live in one app and one dependency set.
+
+## Zustand over Redux (Phase 8)
+
+raven is a single-user local tool. The dashboard state is a few lists plus the
+active hunt; Zustand's one `create()` store covers it in ~20 lines with no
+reducers, actions boilerplate, or providers. Redux would add ceremony for no gain.
+
+## React Flow for the graph (Phase 8)
+
+The hunt graph is saved as networkx node_link_data (nodes + links). React Flow
+consumes nodes/edges in almost the same shape, so `/api/graph` output maps to the
+canvas with a thin adapter. The build-free `dist` UI uses a small SVG renderer
+instead, since React Flow does not ship a reliable UMD/CDN build for a no-bundler
+page; the Vite build uses `@xyflow/react` as specified.
+
+## Serve the React build as static files (Phase 8)
+
+A local single-user tool does not need a separate frontend server. FastAPI mounts
+`web/dist/` at `/`, so one `raven --serve` process serves both the API and the UI.
+The shipped UI is a prebuilt build-free `web/dist/index.html` (CDN React, hash
+routing so deep links survive static serving), so the dashboard works without an
+npm toolchain; `.gitignore` keeps that file but ignores Vite's other build output.
+The Vite source in `web/` was authored but not built or browser-tested in this
+environment (no npm/browser available), so the build-free file is the verified UI.
+
+## Web hunts are headless and passive-first (Phase 8)
+
+The ReAct loop normally prompts on the console for active commands. A server
+thread has no console, so a prompt would hang it. `loop.run(headless=True)` makes
+the browser hunt auto-decline anything that would prompt: passive commands run,
+active commands are declined and fed back so the loop keeps going. This preserves
+the "no unattended active execution" boundary rather than silently auto-approving.

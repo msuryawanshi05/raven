@@ -76,12 +76,16 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
 @click.option("--no-trace", "no_trace", is_flag=True, help="Disable the LLM call tracer.")
 @click.option("--graph-summary", "graph_summary", default=None, type=click.Path(),
               help="Print the hunt-graph summary for a past session's _graph.json.")
+@click.option("--serve", "serve", is_flag=True, help="Start the web dashboard instead of a hunt.")
+@click.option("--port", "port", default=8080, type=int, help="Port for --serve (default 8080).")
 def main(target, mode, model, config_path, report_path, platform, scope_check,
          challenge_path, targets_path, resume_path, parallel, no_dashboard,
          ai_mode, owasp_only, chain, baseline_only, notify,
-         multi_agent, no_trace, graph_summary):
+         multi_agent, no_trace, graph_summary, serve, port):
     cfg = yaml.safe_load(Path(config_path).read_text())
 
+    if serve:
+        return _do_serve(port)
     if graph_summary:
         return _do_graph_summary(graph_summary)
     if scope_check:
@@ -396,6 +400,18 @@ def _do_graph_summary(graph_path):
         console.print(f"[red]graph file not found: {graph_path}[/]")
         raise SystemExit(1)
     console.print(HuntGraph.load(graph_path).summary())
+
+
+def _do_serve(port):
+    import webbrowser
+    import uvicorn
+    url = f"http://localhost:{port}"
+    console.print(f"raven dashboard running at {url}")
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    uvicorn.run("server.main:app", host="127.0.0.1", port=port)
 
 
 if __name__ == "__main__":

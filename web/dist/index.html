@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>raven dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>body{background:#0b0f17;color:#e5e7eb}</style>
+</head>
+<body>
+  <div id="root" class="min-h-screen"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+const api = (p, opt) => fetch("/api" + p, opt).then(r => r.ok ? r.json() : Promise.reject(r));
+const SEV = { CRITICAL: "bg-red-600", HIGH: "bg-orange-500", MEDIUM: "bg-yellow-500",
+              LOW: "bg-blue-500", unknown: "bg-gray-500" };
+const NODE_COLOR = { domain: "#ef4444", subdomain: "#3b82f6", endpoint: "#22c55e",
+                     vuln: "#f59e0b", payload: "#a855f7", service: "#6b7280",
+                     port: "#6b7280", technology: "#6b7280" };
+
+function useHash() {
+  const [h, setH] = useState(window.location.hash || "#/");
+  useEffect(() => {
+    const on = () => setH(window.location.hash || "#/");
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  return h;
+}
+const go = (p) => { window.location.hash = p; };
+const Badge = ({ text }) => (
+  <span className={"px-2 py-0.5 rounded text-xs text-white " + (SEV[(text||"").toUpperCase()] || SEV.unknown)}>{text}</span>
+);
+const Nav = () => (
+  <div className="flex gap-4 px-6 py-3 border-b border-gray-800 text-sm">
+    <span className="font-bold text-red-500 mr-4">RAVEN</span>
+    {[["#/","Dashboard"],["#/sessions","Sessions"],["#/findings","Findings"],["#/graph","Graph"]]
+      .map(([p,l]) => <a key={p} href={p} className="hover:text-white text-gray-400">{l}</a>)}
+  </div>
+);
+
+function Launcher({ onClose }) {
+  const [f, setF] = useState({ target: "", mode: "auto", platform: "", ai_mode: false, owasp_only: false });
+  const submit = async () => {
+    try {
+      const { session_id } = await api("/hunt", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+      onClose(); go("/hunt/" + session_id);
+    } catch (e) { alert("hunt failed to start"); }
+  };
+  const I = (k, label) => (
+    <label className="block mb-2 text-sm">{label}
+      <input className="w-full bg-gray-800 rounded px-2 py-1 mt-1" value={f[k]}
+             onChange={e => setF({ ...f, [k]: e.target.value })} /></label>);
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-gray-900 p-6 rounded-lg w-96" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold mb-3">Start new hunt</h2>
+        {I("target", "Target URL / domain")}
+        <label className="block mb-2 text-sm">Mode
+          <select className="w-full bg-gray-800 rounded px-2 py-1 mt-1" value={f.mode}
+                  onChange={e => setF({ ...f, mode: e.target.value })}>
+            <option value="auto">auto</option><option value="ask">ask</option></select></label>
+        <label className="block mb-2 text-sm">Platform
+          <select className="w-full bg-gray-800 rounded px-2 py-1 mt-1" value={f.platform}
+                  onChange={e => setF({ ...f, platform: e.target.value })}>
+            <option value="">none</option><option value="hackerone">HackerOne</option>
+            <option value="bugcrowd">Bugcrowd</option><option value="huntr">Huntr</option></select></label>
+        <label className="flex gap-2 items-center text-sm mb-1">
+          <input type="checkbox" checked={f.ai_mode} onChange={e => setF({ ...f, ai_mode: e.target.checked })} />AI mode</label>
+        <label className="flex gap-2 items-center text-sm mb-4">
+          <input type="checkbox" checked={f.owasp_only} onChange={e => setF({ ...f, owasp_only: e.target.checked })} />OWASP only</label>
+        <div className="flex gap-2 justify-end">
+          <button className="px-3 py-1 rounded bg-gray-700" onClick={onClose}>Cancel</button>
+          <button className="px-3 py-1 rounded bg-red-600" onClick={submit}>Launch</button></div>
+      </div></div>);
+}
+
+function Dashboard() {
+  const [sessions, setSessions] = useState([]);
+  const [findings, setFindings] = useState([]);
+  const [modal, setModal] = useState(false);
+  useEffect(() => { api("/sessions").then(setSessions).catch(() => {});
+                    api("/findings").then(setFindings).catch(() => {}); }, []);
+  const high = findings.filter(x => ["HIGH", "CRITICAL"].includes((x.severity || "").toUpperCase())).length;
+  const Stat = ({ n, l }) => (<div className="bg-gray-900 rounded p-4"><div className="text-2xl font-bold">{n}</div><div className="text-xs text-gray-400">{l}</div></div>);
+  return (
+    <div className="p-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <Stat n={sessions.length} l="Sessions" /><Stat n={findings.length} l="Findings" />
+        <Stat n={high} l="High / Critical" />
+        <Stat n={sessions[0]?.target || "-"} l="Last hunt" />
+      </div>
+      <button className="px-4 py-2 rounded bg-red-600 mb-4" onClick={() => setModal(true)}>Start new hunt</button>
+      <table className="w-full text-sm">
+        <thead className="text-gray-400 text-left"><tr><th>Target</th><th>Started</th><th>Findings</th><th>Status</th><th></th></tr></thead>
+        <tbody>{sessions.map(s => (
+          <tr key={s.id} className="border-t border-gray-800">
+            <td className="py-2">{s.target}</td><td>{s.started_at}</td><td>{s.finding_count}</td>
+            <td><span className="text-xs px-2 py-0.5 rounded bg-gray-700">{s.status}</span></td>
+            <td><a className="text-blue-400" href={"#/hunt/" + s.id}>View</a></td></tr>))}</tbody>
+      </table>
+      {modal && <Launcher onClose={() => setModal(false)} />}
+    </div>);
+}
+
+function Hunt({ id }) {
+  const [log, setLog] = useState([]);
+  const [finds, setFinds] = useState([]);
+  const [done, setDone] = useState(false);
+  const box = useRef();
+  useEffect(() => {
+    api("/sessions/" + id).then(rs => {  // replay any already-recorded steps
+      setLog(rs.filter(r => r.thought || r.command).map(r => ({
+        type: r.command ? "action" : "thought", content: r.thought || r.command })));
+    }).catch(() => {});
+    const ws = new WebSocket("ws://" + location.host + "/ws/hunt/" + id);
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.type === "finding") setFinds(f => [...f, m.content]);
+      else if (m.type === "done" || m.type === "error") setDone(true);
+      else setLog(l => [...l, m]);
+    };
+    return () => ws.close();
+  }, [id]);
+  useEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [log]);
+  const COLOR = { thought: "text-cyan-400", action: "text-fuchsia-400", observation: "text-blue-300", error: "text-red-400" };
+  const stop = () => api("/hunt/" + id, { method: "DELETE" }).catch(() => {});
+  return (
+    <div className="p-6">
+      <div className="flex justify-between mb-3">
+        <h2 className="font-bold">Hunt {id}</h2>
+        {!done ? <button className="px-3 py-1 rounded bg-red-600" onClick={stop}>Stop hunt</button>
+               : <div className="flex gap-2"><a className="px-3 py-1 rounded bg-gray-700" href={"#/reports/" + id}>View report</a>
+                     <a className="px-3 py-1 rounded bg-gray-700" href="#/graph">View graph</a></div>}
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div ref={box} className="bg-black rounded p-3 h-96 overflow-auto font-mono text-xs">
+          {log.map((m, i) => <div key={i} className={COLOR[m.type] || "text-gray-300"}>
+            <span className="text-gray-600">{(m.type || "").toUpperCase()} </span>{typeof m.content === "string" ? m.content : JSON.stringify(m.content)}</div>)}
+        </div>
+        <div className="bg-gray-900 rounded p-3 h-96 overflow-auto">
+          <div className="text-gray-400 text-sm mb-2">Findings</div>
+          {finds.map((f, i) => <div key={i} className="mb-2 text-sm"><Badge text={f.severity} /> <b>{f.vuln}</b> <span className="text-gray-400">{f.target}</span></div>)}
+        </div>
+      </div>
+    </div>);
+}
+
+function Sessions() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api("/sessions").then(setRows).catch(() => {}); }, []);
+  return (<div className="p-6"><h2 className="font-bold mb-3">Sessions</h2>
+    <table className="w-full text-sm"><thead className="text-gray-400 text-left"><tr><th>Target</th><th>Started</th><th>Findings</th><th>Status</th></tr></thead>
+    <tbody>{rows.map(s => <tr key={s.id} className="border-t border-gray-800 cursor-pointer hover:bg-gray-900" onClick={() => go("/hunt/" + s.id)}>
+      <td className="py-2">{s.target}</td><td>{s.started_at}</td><td>{s.finding_count}</td><td>{s.status}</td></tr>)}</tbody></table></div>);
+}
+
+function Findings() {
+  const [rows, setRows] = useState([]);
+  const [sev, setSev] = useState("ALL");
+  const [open, setOpen] = useState(null);
+  useEffect(() => { api("/findings").then(setRows).catch(() => {}); }, []);
+  const shown = rows.filter(r => sev === "ALL" || (r.severity || "").toUpperCase() === sev);
+  return (<div className="p-6"><div className="flex gap-2 mb-3 items-center"><h2 className="font-bold">Findings</h2>
+    <select className="bg-gray-800 rounded px-2 py-1 text-sm ml-4" value={sev} onChange={e => setSev(e.target.value)}>
+      {["ALL","CRITICAL","HIGH","MEDIUM","LOW"].map(s => <option key={s}>{s}</option>)}</select></div>
+    <table className="w-full text-sm"><thead className="text-gray-400 text-left"><tr><th>Target</th><th>Vuln</th><th>Severity</th><th>Session</th><th>At</th></tr></thead>
+    <tbody>{shown.map((r, i) => <React.Fragment key={i}>
+      <tr className="border-t border-gray-800 cursor-pointer" onClick={() => setOpen(open === i ? null : i)}>
+        <td className="py-2">{r.target}</td><td>{r.vuln}</td><td><Badge text={r.severity} /></td><td className="text-gray-400">{r.session}</td><td>{r.discovered_at}</td></tr>
+      {open === i && <tr className="bg-gray-900"><td colSpan="5" className="p-3 text-xs font-mono">command: {r.command || "-"}</td></tr>}
+    </React.Fragment>)}</tbody></table></div>);
+}
+
+function Graph() {
+  const [data, setData] = useState({ nodes: [], links: [] });
+  const [sel, setSel] = useState(null);
+  useEffect(() => { api("/graph").then(setData).catch(() => {}); }, []);
+  const nodes = data.nodes || [];
+  const links = data.links || [];
+  const R = 240, cx = 320, cy = 260;
+  const pos = {};
+  nodes.forEach((n, i) => {
+    const a = (2 * Math.PI * i) / Math.max(nodes.length, 1);
+    pos[n.id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+  });
+  return (<div className="p-6 flex gap-4"><div className="flex-1">
+    <h2 className="font-bold mb-3">Hunt graph</h2>
+    {nodes.length === 0 ? <div className="text-gray-500">No graph yet. Run a --multi-agent hunt.</div> :
+    <svg width="640" height="520" className="bg-gray-900 rounded">
+      {links.map((l, i) => { const a = pos[l.source], b = pos[l.target]; if (!a || !b) return null;
+        return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#374151" />; })}
+      {nodes.map((n) => <g key={n.id} onClick={() => setSel(n)} className="cursor-pointer">
+        <circle cx={pos[n.id].x} cy={pos[n.id].y} r="8" fill={NODE_COLOR[n.type] || "#6b7280"} />
+        <text x={pos[n.id].x + 10} y={pos[n.id].y + 4} fill="#9ca3af" fontSize="9">{n.id}</text></g>)}
+    </svg>}</div>
+    <div className="w-64 bg-gray-900 rounded p-3 text-sm">
+      <div className="text-gray-400 mb-2">Node</div>
+      {sel ? <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(sel, null, 2)}</pre> : <div className="text-gray-600">click a node</div>}
+    </div></div>);
+}
+
+function Report({ id }) {
+  const [md, setMd] = useState("");
+  useEffect(() => { api("/reports/" + id).then(d => setMd(d.markdown)).catch(() => setMd("report unavailable")); }, [id]);
+  const download = () => { const b = new Blob([md], { type: "text/markdown" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = id + "_report.md"; a.click(); };
+  return (<div className="p-6"><div className="flex justify-between mb-3"><h2 className="font-bold">Report {id}</h2>
+    <button className="px-3 py-1 rounded bg-gray-700" onClick={download}>Download .md</button></div>
+    <div className="bg-gray-900 rounded p-4 prose prose-invert max-w-none text-sm"
+         dangerouslySetInnerHTML={{ __html: marked.parse(md || "") }} /></div>);
+}
+
+function App() {
+  const h = useHash();
+  const [, path, id] = h.replace("#", "").split("/");
+  let page;
+  if (path === "hunt") page = <Hunt id={id} />;
+  else if (path === "sessions") page = <Sessions />;
+  else if (path === "findings") page = <Findings />;
+  else if (path === "graph") page = <Graph />;
+  else if (path === "reports") page = <Report id={id} />;
+  else page = <Dashboard />;
+  return <div><Nav />{page}</div>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

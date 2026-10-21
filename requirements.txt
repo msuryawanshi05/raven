@@ -3,3 +3,6 @@ click>=8.1
 rich>=13.7
 PyYAML>=6.0
 networkx>=3.0
+fastapi
+uvicorn[standard]
+websockets

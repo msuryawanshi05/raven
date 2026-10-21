@@ -256,6 +256,31 @@ findings, runs the exploit loop per host) on a 2-thread pool sharing one graph a
 SessionLog. The ExploitAgent stops once recon is complete and the queue drains.
 Single-agent mode is the default and is unchanged.
 
+## Web dashboard (Phase 8)
+
+`raven --serve [--port 8080]` starts a FastAPI server on localhost, opens the
+browser, and does not launch a hunt by itself; the dashboard is the launcher. The
+server (`server/`) exposes REST under `/api` (sessions, findings, graph, reports,
+config, and hunt start/stop) and a WebSocket at `/ws/hunt/{session_id}` that
+streams live thought/action/observation/finding events. It serves the UI from
+`web/dist/`.
+
+The shipped UI is a build-free `web/dist/index.html` (React via CDN), so
+`raven --serve` works with no build step. The browser hunt is headless: passive
+commands auto-run and active commands are auto-declined, because there is no
+operator at the server console to approve them. Out-of-scope targets are rejected
+by the same scope enforcer. The config endpoint returns only non-secret fields and
+never LLM or notify keys.
+
+```
+# run the dashboard with the prebuilt UI
+raven --serve
+
+# optional: rebuild the UI from the Vite source (React, Tailwind, Zustand, React Flow)
+cd web && npm install && npm run build
+raven --serve
+```
+
 ## Config (`config.yaml`)
 
 - `model` / `reconftw_path` / `max_steps`
@@ -289,6 +314,7 @@ python test_phase4.py    # challenge parse, multi-target, resume, dashboard
 python test_phase5.py    # behaviour detector, OWASP checker, chains, AI-target loop
 python test_phase6.py    # per-target rate limits, nuclei integration, notify
 python test_phase7.py    # tracer, LLM provider switching, graph, orchestrator
+python test_phase8.py    # REST API, WebSocket, bridge, --serve flag
 ```
 
 ## Errors it handles

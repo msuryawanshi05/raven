@@ -14,6 +14,17 @@ from . import _llm, kb_loader, tools
 from .scope import ScopeEnforcer, ScopeViolation, command_target as scope_command_target
 from .prompts import system_prompt, initial_user_prompt
 
+try:  # live web streaming; a no-op in CLI-only mode
+    from server.bridge import put_message
+except Exception:
+    def put_message(*_a, **_k):
+        return None
+
+
+def _now_iso():
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
+
 console = Console()
 
 
@@ -72,12 +83,14 @@ def _finding_hit(output, cfg):
     return None
 
 
-def _approver(mode, whitelist, view):
+def _approver(mode, whitelist, view, headless=False):
     """Return approve(cmd)->bool for fallback commands, honouring mode + passive gate."""
     def approve(cmd):
         if mode == "auto" and tools.is_passive("run_command", cmd, whitelist):
             view.line("[green]auto: passive fallback, executing.[/]")
             return True
+        if headless:  # no console (web): never run active commands unattended
+            return False
         prompt = "active/non-whitelisted" if mode == "auto" else "ask mode"
         return console.input(
             f"[bold yellow]Run fallback? ({prompt}) [y/N] [/]"
@@ -101,7 +114,8 @@ def _observation(result):
 
 def run(target, recon_summary, model, mode, config, log,
         extra_system="", seed_context="", start_step=1,
-        skip_commands=None, dashboard=None, tracer=None, graph=None, agent_name="main"):
+        skip_commands=None, dashboard=None, tracer=None, graph=None, agent_name="main",
+        session_id=None, headless=False, stop_event=None):
     classes = kb_loader.available(config)
     sys_prompt = system_prompt(classes) + (f"\n\n{extra_system}" if extra_system else "")
     messages = [
@@ -114,7 +128,7 @@ def run(target, recon_summary, model, mode, config, log,
     whitelist = config.get("passive_whitelist", [])
     max_steps = config.get("max_steps", 15)
     view = dashboard if dashboard is not None else PlainView(console)
-    approve_fb = _approver(mode, whitelist, view)
+    approve_fb = _approver(mode, whitelist, view, headless)
     enforcer = ScopeEnforcer(config.get("scope", {}))
     consulted = set()
     skip = set(skip_commands or [])
@@ -126,6 +140,9 @@ def run(target, recon_summary, model, mode, config, log,
 
     with view:
         for i in range(max_steps):
+            if stop_event is not None and stop_event.is_set():
+                put_message(session_id, {"type": "done", "content": "stopped", "timestamp": _now_iso()})
+                return
             step = start_step + i
             view.update(step=step)
             # Graph memory (multi-agent): inject the live graph each step.
@@ -137,6 +154,8 @@ def run(target, recon_summary, model, mode, config, log,
             if parsed["thought"]:
                 view.panel(parsed["thought"], f"THOUGHT (step {step})", "cyan")
                 view.update(thought=parsed["thought"])
+                put_message(session_id, {"type": "thought", "content": parsed["thought"],
+                                         "timestamp": _now_iso()})
 
             for section, text in parsed["notes"]:
                 log.notes.add(section, text)
@@ -178,6 +197,8 @@ def run(target, recon_summary, model, mode, config, log,
             view.panel(f"[bold]{action}[/]\n{action_input}",
                        f"PROPOSED ACTION (step {step})", "magenta")
             view.update(tool=action, command=action_input, status="proposed")
+            put_message(session_id, {"type": "action", "content": f"{action} {action_input}",
+                                     "timestamp": _now_iso()})
 
             # Scope gate: hard block before the human is even asked.
             tgt = scope_command_target(action, action_input, target)
@@ -194,6 +215,13 @@ def run(target, recon_summary, model, mode, config, log,
             passive = tools.is_passive(action, action_input, whitelist)
             if mode == "auto" and passive:
                 view.line("[green]auto: passive command, executing.[/]")
+            elif headless:  # no console (web): decline active commands, keep going
+                view.line("[yellow]headless: active command auto-declined.[/]")
+                log.log_step(step, thought=parsed["thought"], action=action,
+                             command=action_input, status="skipped")
+                messages.append({"role": "user",
+                                 "content": "OBSERVATION: active command auto-declined (no operator at the console). Propose a passive step or give FINAL_ANSWER."})
+                continue
             else:
                 why = "active/non-whitelisted" if mode == "auto" else "ask mode"
                 if not console.input(f"[bold yellow]Run this? ({why}) [y/N] [/]").strip().lower().startswith("y"):
@@ -223,12 +251,18 @@ def run(target, recon_summary, model, mode, config, log,
                               f"[auto:'{finding}'] after `{action_input}`")
                 if graph:
                     graph.add_finding(tools.url_in(action_input) or target, finding, "medium")
+                put_message(session_id, {"type": "finding",
+                                         "content": {"vuln": finding, "target": target,
+                                                     "command": action_input, "severity": "medium"},
+                                         "timestamp": _now_iso()})
             if result["status"] == "failed":
                 log.notes.add("Dead Ends", f"`{action_input}` - all fallbacks failed")
 
             view.panel(result["output"][:2000],
                        f"OBSERVATION ({result['status']})", "blue")
             view.update(status=result["status"])
+            put_message(session_id, {"type": "observation",
+                                     "content": result["output"][:500], "timestamp": _now_iso()})
             stats()
             log.log_step(step, thought=parsed["thought"], action=action,
                          command=action_input, status=result["status"],

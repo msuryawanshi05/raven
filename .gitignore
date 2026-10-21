@@ -7,3 +7,6 @@ reports/
 *.log
 *_trace.jsonl
 *_graph.json
+web/node_modules/
+web/dist/*
+!web/dist/index.html
