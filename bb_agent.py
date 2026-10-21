@@ -29,10 +29,13 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 from agent import ai_target, challenge, multi, notify as notify_mod, resume, tools
+from agent.graph import HuntGraph
 from agent.injection_chains import InjectionChainBuilder
 from agent.loop import run
 from agent.memory import SessionLog
+from agent.orchestrator import Orchestrator
 from agent.scope import PASSIVE_SERVICES, ScopeEnforcer, host_of
+from agent.tracer import LLMTracer
 from reporter import builder, formatter
 
 console = Console()
@@ -68,30 +71,42 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
 @click.option("--baseline-only", "baseline_only", is_flag=True, help="AI mode: record baseline behaviour only.")
 @click.option("--notify", "notify", type=click.Choice(["telegram", "discord"]), default=None,
               help="Send a message on each finding (needs notify.<platform> in config).")
+@click.option("--multi-agent", "multi_agent", is_flag=True,
+              help="Run ReconAgent + ExploitAgent in parallel instead of one loop.")
+@click.option("--no-trace", "no_trace", is_flag=True, help="Disable the LLM call tracer.")
+@click.option("--graph-summary", "graph_summary", default=None, type=click.Path(),
+              help="Print the hunt-graph summary for a past session's _graph.json.")
 def main(target, mode, model, config_path, report_path, platform, scope_check,
          challenge_path, targets_path, resume_path, parallel, no_dashboard,
-         ai_mode, owasp_only, chain, baseline_only, notify):
+         ai_mode, owasp_only, chain, baseline_only, notify,
+         multi_agent, no_trace, graph_summary):
     cfg = yaml.safe_load(Path(config_path).read_text())
 
+    if graph_summary:
+        return _do_graph_summary(graph_summary)
     if scope_check:
         return _do_scope_check(cfg, scope_check)
     if report_path:
         return _do_report(cfg, report_path, platform)
     if challenge_path:
-        return _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify)
+        return _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify, no_trace)
     if resume_path:
-        return _do_resume(cfg, resume_path, mode, model, no_dashboard, notify)
+        return _do_resume(cfg, resume_path, mode, model, no_dashboard, notify, no_trace)
     if targets_path:
-        return _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify)
+        return _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify, no_trace)
     if ai_mode or owasp_only or chain or baseline_only:
         if not target:
             raise click.UsageError("AI mode needs --target <llm-url>")
         return _do_ai_target(cfg, target, mode, model, no_dashboard,
-                             owasp_only, baseline_only, chain, notify)
+                             owasp_only, baseline_only, chain, notify, no_trace)
+    if multi_agent:
+        if not target:
+            raise click.UsageError("--multi-agent needs --target")
+        return _do_multi_agent(cfg, target, mode, model, no_dashboard, notify, no_trace)
     if not target:
         raise click.UsageError(
             "need one of --target, --targets, --challenge, --resume, --report, --scope-check")
-    _do_recon(cfg, target, mode, model, no_dashboard, notify)
+    _do_recon(cfg, target, mode, model, no_dashboard, notify, no_trace)
 
 
 # --- helpers ----------------------------------------------------------------
@@ -109,6 +124,18 @@ def _make_dash(cfg, target, mode, no_dashboard):
 
 def _count_findings(log):
     return len(log.notes.items["Potential Vulns"])
+
+
+def _tracer(cfg, log, no_trace):
+    tconf = cfg.get("trace") or {}
+    if no_trace or not tconf.get("enabled", True):
+        return None
+    return LLMTracer(log.path.with_name(log.path.stem + "_trace.jsonl"))
+
+
+def _trace_done(tracer, cfg):
+    if tracer and tracer.entries and (cfg.get("trace") or {}).get("show_summary", True):
+        console.print(tracer.summary_table())
 
 
 def _attach_notify(log, cfg, platform, target):
@@ -159,7 +186,7 @@ def _nuclei_scan(cfg, target, recon, log, verbose):
     return out
 
 
-def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True, notify=None):
+def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True, notify=None, no_trace=False):
     """Run the full hunt for one target. Returns a summary dict for multi-target."""
     t0 = time.time()
 
@@ -194,13 +221,15 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True, notify=
     seed = recon + (f"\n\n[nuclei results]\n{nuclei_out}" if nuclei_out else "")
 
     dash = _make_dash(cfg, target, mode, no_dashboard)
+    tracer = _tracer(cfg, log, no_trace)
     status = "done"
     try:
-        run(target, seed, _model(cfg, model), mode, cfg, log, dashboard=dash)
+        run(target, seed, _model(cfg, model), mode, cfg, log, dashboard=dash, tracer=tracer)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         log.log("error", error=str(e))
         status = "llm_error"
+    _trace_done(tracer, cfg)
     return summary(_count_findings(log), status, log)
 
 
@@ -232,15 +261,15 @@ def _do_report(cfg, report_path, platform):
         console.print(f"[green]{name} draft written:[/] {out}")
 
 
-def _do_recon(cfg, target, mode, model, no_dashboard, notify=None):
-    res = hunt_one(cfg, target, mode, model, no_dashboard, notify=notify)
+def _do_recon(cfg, target, mode, model, no_dashboard, notify=None, no_trace=False):
+    res = hunt_one(cfg, target, mode, model, no_dashboard, notify=notify, no_trace=no_trace)
     if res["status"] in ("out_of_scope", "no_reconftw", "llm_error"):
         raise SystemExit(1)
     console.print(f"[green]done[/] - {res['findings']} potential finding(s). "
                   f"Report with: python bb_agent.py --report {res['session']}")
 
 
-def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify=None):
+def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify=None, no_trace=False):
     targets = multi.load_targets(targets_path)
     if not targets:
         console.print(f"[red]no targets in {targets_path}[/]")
@@ -249,13 +278,14 @@ def _do_targets(cfg, targets_path, mode, model, parallel, no_dashboard, notify=N
     if parallel:
         console.print("[yellow]--parallel: dashboard off; ask-mode prompts may interleave.[/]")
     results = multi.run_all(targets, lambda t: hunt_one(cfg, t, mode, _model(cfg, model),
-                                                        no_dashboard=nd, verbose=True, notify=notify),
+                                                        no_dashboard=nd, verbose=True,
+                                                        notify=notify, no_trace=no_trace),
                             parallel=parallel)
     multi.render_table(results, console)
     console.print(f"[green]summary saved:[/] {multi.save_summary(results, cfg)}")
 
 
-def _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify=None):
+def _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify=None, no_trace=False):
     text = Path(challenge_path).read_text(encoding="utf-8")
     parsed = challenge.parse_briefing(text)
     cfg = challenge.configure(cfg, parsed)
@@ -269,13 +299,15 @@ def _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify=None):
     _attach_notify(log, cfg, notify, target)
     console.print(f"Session log: [dim]{log.path}[/]")
     dash = _make_dash(cfg, target, mode, no_dashboard)
+    tracer = _tracer(cfg, log, no_trace)
     try:
         run(target, f"Challenge briefing:\n{text}", _model(cfg, model), mode, cfg, log,
-            extra_system=challenge.system_injection(parsed), dashboard=dash)
+            extra_system=challenge.system_injection(parsed), dashboard=dash, tracer=tracer)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         log.log("error", error=str(e))
         raise SystemExit(1)
+    _trace_done(tracer, cfg)
 
     m = builder.build(log.path, cfg)
     out = formatter.format_report(m, "huntr", cfg)
@@ -283,7 +315,7 @@ def _do_challenge(cfg, challenge_path, mode, model, no_dashboard, notify=None):
     console.print(f"[green]Huntr draft:[/] {out}")
 
 
-def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_only, chain, notify=None):
+def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_only, chain, notify=None, no_trace=False):
     if chain and chain not in InjectionChainBuilder.types():
         console.print(f"[red]unknown chain '{chain}'[/]; choose from "
                       f"{', '.join(InjectionChainBuilder.types())}")
@@ -303,19 +335,21 @@ def _do_ai_target(cfg, target, mode, model, no_dashboard, owasp_only, baseline_o
         console.print("[yellow]warning: ai_target.payload_template has no {{PAYLOAD}} marker.[/]")
 
     dash = _make_dash(cfg, target, mode, no_dashboard)
+    tracer = _tracer(cfg, log, no_trace)
     try:
         ai_target.run(target, _model(cfg, model), cfg, log, mode=mode,
                       owasp_only=owasp_only, baseline_only=baseline_only,
-                      chain=chain, dashboard=dash)
+                      chain=chain, dashboard=dash, tracer=tracer)
     except RuntimeError as e:  # raven LLM unavailable (full ai-mode crafting)
         console.print(f"[red]{e}[/]")
         log.log("error", error=str(e))
         raise SystemExit(1)
+    _trace_done(tracer, cfg)
     console.print(f"[green]AI session done.[/] Report with: "
                   f"python bb_agent.py --report {log.path}")
 
 
-def _do_resume(cfg, resume_path, mode, model, no_dashboard, notify=None):
+def _do_resume(cfg, resume_path, mode, model, no_dashboard, notify=None, no_trace=False):
     if not Path(resume_path).is_file():
         console.print(f"[red]session file not found: {resume_path}[/]")
         raise SystemExit(1)
@@ -326,14 +360,42 @@ def _do_resume(cfg, resume_path, mode, model, no_dashboard, notify=None):
                   f"{st['last_step'] + 1} ({len(st['tried'])} commands already tried)")
     skip = st["tried"] if cfg.get("resume_skip_duplicates", True) else None
     dash = _make_dash(cfg, st["target"], mode, no_dashboard)
+    tracer = _tracer(cfg, log, no_trace)
     # No startup scope re-check: the target was approved in the original session.
     try:
         run(st["target"], st["summary"], _model(cfg, model), mode, cfg, log,
-            start_step=st["last_step"] + 1, skip_commands=skip, dashboard=dash)
+            start_step=st["last_step"] + 1, skip_commands=skip, dashboard=dash, tracer=tracer)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         log.log("error", error=str(e))
         raise SystemExit(1)
+    _trace_done(tracer, cfg)
+
+
+def _do_multi_agent(cfg, target, mode, model, no_dashboard, notify=None, no_trace=False):
+    sr = ScopeEnforcer(cfg.get("scope", {})).check(target)
+    if not sr.allowed:
+        console.print(f"[red bold]Target out of scope:[/] {target} - {sr.reason}")
+        raise SystemExit(1)
+    log = SessionLog(target)
+    _attach_notify(log, cfg, notify, target)
+    tracer = _tracer(cfg, log, no_trace)
+    graph = HuntGraph(log.path.with_name(log.path.stem + "_graph.json"))
+    console.print(f"[bold]multi-agent[/] target=[cyan]{target}[/] -> [dim]{log.path}[/]")
+    Orchestrator(target, cfg, log, graph, _model(cfg, model), mode=mode, tracer=tracer).run()
+    _trace_done(tracer, cfg)
+    try:
+        m = builder.build(log.path, cfg)
+        console.print(f"[green]Report:[/] {m['report_path']}")
+    except Exception as e:
+        console.print(f"[yellow]report skipped: {e}[/]")
+
+
+def _do_graph_summary(graph_path):
+    if not Path(graph_path).is_file():
+        console.print(f"[red]graph file not found: {graph_path}[/]")
+        raise SystemExit(1)
+    console.print(HuntGraph.load(graph_path).summary())
 
 
 if __name__ == "__main__":

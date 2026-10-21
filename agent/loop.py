@@ -10,7 +10,7 @@ import re
 from rich.console import Console
 from rich.panel import Panel
 
-from . import kb_loader, tools
+from . import _llm, kb_loader, tools
 from .scope import ScopeEnforcer, ScopeViolation, command_target as scope_command_target
 from .prompts import system_prompt, initial_user_prompt
 
@@ -54,19 +54,12 @@ def _parse(text: str) -> dict:
     }
 
 
-def _chat(model, messages):
-    try:
-        import ollama  # lazy: dry runs work without the SDK installed
-        resp = ollama.chat(model=model, messages=messages)
-    except ImportError:
-        raise RuntimeError("ollama SDK not installed. Install it with:  pip install ollama")
-    except Exception as e:  # ollama down, model missing, etc.
-        raise RuntimeError(
-            f"ollama call failed: {e}\n"
-            "Is ollama running? Start it with:  ollama serve\n"
-            f"Is the model pulled?  ollama pull {model}"
-        )
-    return resp["message"]["content"]
+def _graph_note(graph, target, section, text):
+    s = section.strip().lower()
+    if s.startswith("sub"):
+        graph.add_subdomain(target, text.split()[0] if text.split() else text)
+    elif s.startswith("vuln"):
+        graph.add_finding(target, text, "medium")
 
 
 def _finding_hit(output, cfg):
@@ -108,7 +101,7 @@ def _observation(result):
 
 def run(target, recon_summary, model, mode, config, log,
         extra_system="", seed_context="", start_step=1,
-        skip_commands=None, dashboard=None):
+        skip_commands=None, dashboard=None, tracer=None, graph=None, agent_name="main"):
     classes = kb_loader.available(config)
     sys_prompt = system_prompt(classes) + (f"\n\n{extra_system}" if extra_system else "")
     messages = [
@@ -135,7 +128,9 @@ def run(target, recon_summary, model, mode, config, log,
         for i in range(max_steps):
             step = start_step + i
             view.update(step=step)
-            reply = _chat(model, messages)
+            # Graph memory (multi-agent): inject the live graph each step.
+            call_msgs = messages + ([{"role": "user", "content": graph.summary()}] if graph else [])
+            reply = _llm.chat(call_msgs, model, agent_name, config, tracer)
             messages.append({"role": "assistant", "content": reply})
             parsed = _parse(reply)
 
@@ -145,6 +140,8 @@ def run(target, recon_summary, model, mode, config, log,
 
             for section, text in parsed["notes"]:
                 log.notes.add(section, text)
+                if graph:
+                    _graph_note(graph, target, section, text)
                 view.line(f"[dim]noted ({section.strip()}): {text}[/]")
             stats()
 
@@ -224,6 +221,8 @@ def run(target, recon_summary, model, mode, config, log,
             if finding:
                 log.notes.add("Potential Vulns",
                               f"[auto:'{finding}'] after `{action_input}`")
+                if graph:
+                    graph.add_finding(tools.url_in(action_input) or target, finding, "medium")
             if result["status"] == "failed":
                 log.notes.add("Dead Ends", f"`{action_input}` - all fallbacks failed")
 

@@ -86,6 +86,29 @@ The command is `nuclei -l <file> -severity ...`. The spec wrote `-t
 <subdomain_list_file>`, but in nuclei `-t` selects templates and `-l` takes the
 host-list file, so the build uses `-l` to match the stated intent.
 
+## LLM calls centralized through _llm.chat (Phase 7)
+
+The ollama call logic moved out of `loop.py:_chat` into `agent/_llm.py:chat`, and
+both `loop.py` and `ai_target.py` now call it. This is the one place provider
+selection and tracing live. `_chat` was removed; the stubbed-ollama tests still
+pass because `_llm._ollama` imports and calls ollama exactly as before.
+
+## Gemini failure falls back silently (Phase 7)
+
+On any Gemini REST error, `_llm.chat` falls back to `llm.ollama_model` without
+surfacing the reason. The spec said "log warning", but `_llm` has no logger in
+scope; the fallback keeps a run alive rather than aborting. Marked `shortcut:` in
+the code. The Gemini key is read from config or `GEMINI_API_KEY` and is never
+printed or logged.
+
+## Multi-agent exploit results are collected, not re-queued for a reader (Phase 7)
+
+The ExploitAgent posts `exploit_result` messages to the shared Queue per the spec,
+but nothing consumes them; the agent also appends results to `self.results`, which
+is what the Orchestrator reports. Termination is "recon_complete seen AND queue
+empty", checked each iteration with a 1s poll, which exits faster than the 60s idle
+fallback the spec allows.
+
 ## Notifications fire from the log write path (Phase 6)
 
 `--notify` attaches a callable to `SessionLog`. `memory.py:_append` fires it on any

@@ -5,3 +5,5 @@ sessions/
 reports/
 .env
 *.log
+*_trace.jsonl
+*_graph.json

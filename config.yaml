@@ -62,3 +62,13 @@ notify:                     # --notify telegram|discord fires on each finding
     chat_id: ""
   discord:
     webhook_url: ""
+
+# Phase 7 - LLM provider + tracing
+llm:
+  provider: ollama          # ollama | gemini | claude | openai
+  model: llama3.1
+  gemini_api_key: ""        # or set GEMINI_API_KEY env var
+  ollama_model: llama3.1    # fallback if gemini fails
+trace:
+  enabled: true
+  show_summary: true

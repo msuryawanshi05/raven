@@ -107,3 +107,13 @@ class ScopeEnforcer:
         if self.is_in_scope(host):
             return ScopeResult(True, "in scope")
         return ScopeResult(False, f"{host} is not in the defined scope")
+
+
+def hosts_under(recon_text, target):
+    """Hostnames in recon output that belong to the target's own domain."""
+    base = host_of(target)
+    found = set(re.findall(r"\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b",
+                           (recon_text or "").lower()))
+    found = {h for h in found if h == base or h.endswith("." + base)}
+    found.add(base)
+    return found

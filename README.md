@@ -61,6 +61,12 @@ python bb_agent.py --target https://chat.example.com --chain rag_poison --mode a
 
 # send a message on each finding (needs notify.<platform> filled in config.yaml)
 python bb_agent.py --target example.com --mode auto --notify telegram
+
+# multi-agent: recon and exploit agents run in parallel
+python bb_agent.py --target example.com --multi-agent --mode auto
+
+# print the hunt graph from a past session; disable the LLM tracer with --no-trace
+python bb_agent.py --graph-summary sessions/example.com_<ts>_graph.json
 ```
 
 Each recon run:
@@ -224,6 +230,32 @@ notify:
   discord:  { webhook_url: "" }
 ```
 
+## Tracing, graph, multi-agent (Phase 7)
+
+Every LLM call goes through `agent/_llm.py:chat`, which selects the provider from
+`llm.provider` (ollama or gemini) and records the call when a tracer is active.
+Gemini runs over REST with stdlib urllib and no SDK; on any Gemini failure the call
+falls back to `llm.ollama_model`. The key is read from config or `GEMINI_API_KEY`
+and is never logged.
+
+`agent/tracer.py` writes one entry per call to
+`sessions/<target>_<ts>_trace.jsonl` (timestamp, agent, model, estimated tokens,
+latency, cost from a rate table) and prints a per-agent summary table at the end.
+Token counts are `len // 4` estimates; without a provider SDK returning usage there
+is no exact count. `--no-trace` or `trace.enabled: false` turns it off.
+
+`agent/graph.py` keeps a networkx DiGraph of the hunt (domains, subdomains, ports,
+endpoints, technologies, vulns) saved to `sessions/<target>_<ts>_graph.json`. Writes
+take a lock; reads do not. In multi-agent runs the loop updates it on each `NOTE:`
+or finding and injects `graph.summary()` into every step. Read a saved graph with
+`--graph-summary <file>`.
+
+`--multi-agent` runs `agent/orchestrator.py`: a ReconAgent (passive recon + nuclei,
+populates the graph, posts findings to a Queue) and an ExploitAgent (consumes
+findings, runs the exploit loop per host) on a 2-thread pool sharing one graph and
+SessionLog. The ExploitAgent stops once recon is complete and the queue drains.
+Single-agent mode is the default and is unchanged.
+
 ## Config (`config.yaml`)
 
 - `model` / `reconftw_path` / `max_steps`
@@ -238,6 +270,7 @@ notify:
 - `ai_target`: endpoint, method, headers, payload_template, response_path, and
   request_delay for `--ai-mode` (see AI target mode above)
 - `rate_limits` / `nuclei` / `notify`: see the Phase 6 section above
+- `llm` / `trace`: provider selection and LLM call tracing (see Phase 7 above)
 
 ## Safety
 
@@ -255,6 +288,7 @@ python test_phase3.py    # scope enforcer, scope-block in loop, report + formatt
 python test_phase4.py    # challenge parse, multi-target, resume, dashboard
 python test_phase5.py    # behaviour detector, OWASP checker, chains, AI-target loop
 python test_phase6.py    # per-target rate limits, nuclei integration, notify
+python test_phase7.py    # tracer, LLM provider switching, graph, orchestrator
 ```
 
 ## Errors it handles
