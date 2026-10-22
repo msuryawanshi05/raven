@@ -74,7 +74,7 @@ def test_llm_gemini_rest_build():
     finally:
         urllib.request.urlopen = orig
     assert out == "GEN"
-    assert "gemini-1.5-flash:generateContent" in captured["url"] and "key=SECRET" in captured["url"]
+    assert "gemini-flash:generateContent" in captured["url"] and "key=SECRET" in captured["url"]
 
 
 def test_graph_build_and_roundtrip():

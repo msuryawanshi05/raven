@@ -8,6 +8,12 @@ import os
 import time
 import urllib.request
 
+try:  # load GEMINI_API_KEY (and friends) from a .env file if present
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 
 def chat(messages, model, agent_name="main", config=None, tracer=None) -> str:
     t0 = time.time()
@@ -18,10 +24,13 @@ def chat(messages, model, agent_name="main", config=None, tracer=None) -> str:
     if provider == "gemini" and key:
         try:
             resp = _gemini(messages, model, key)
-        except Exception:
-            # shortcut: silent fall back to ollama on any Gemini failure; the
-            # detailed reason is not surfaced. Upgrade if Gemini reliability matters.
-            resp = _ollama(messages, llm.get("ollama_model", "llama3.1"))
+        except Exception as ge:
+            # Fall back to ollama; if that is also unavailable, surface the real
+            # Gemini error rather than a misleading "start ollama" message.
+            try:
+                resp = _ollama(messages, llm.get("ollama_model", "llama3.1"))
+            except RuntimeError:
+                raise RuntimeError(f"Gemini call failed and ollama is unavailable: {ge}")
     else:
         resp = _ollama(messages, model)
 
@@ -47,7 +56,8 @@ def _ollama(messages, model):
 def _gemini(messages, model, key):
     # Gemini REST is stateless HTTP, safe to call from multiple threads at once.
     text = "\n\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
-    mdl = "gemini-1.5-flash" if ("flash" in model or model == "gemini") else model
+    # Use a concrete Gemini model id as-is; map anything non-Gemini to a current flash.
+    mdl = model if model.startswith("gemini") else "gemini-flash-lite-latest"
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{mdl}:generateContent?key={key}")
     body = json.dumps({"contents": [{"parts": [{"text": text}]}]}).encode("utf-8")

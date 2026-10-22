@@ -211,10 +211,13 @@ def run(target, recon_summary, model, mode, config, log,
                                  "content": f"OBSERVATION: Target {tgt} is out of scope. Do not test it. Propose an in-scope step or give FINAL_ANSWER."})
                 continue
 
-            # Approval gate (Phase 1 behaviour, preserved).
+            # Approval gate. In auto mode, passive commands and the native checks
+            # auto-run (the native tools are in-process and scope-gated; Phase 9:
+            # "active checks run freely in auto mode"); arbitrary external commands
+            # still prompt. In ask mode everything prompts.
             passive = tools.is_passive(action, action_input, whitelist)
-            if mode == "auto" and passive:
-                view.line("[green]auto: passive command, executing.[/]")
+            if mode == "auto" and (passive or action in tools.NATIVE):
+                view.line("[green]auto: executing (passive/native).[/]")
             elif headless:  # no console (web): decline active commands, keep going
                 view.line("[yellow]headless: active command auto-declined.[/]")
                 log.log_step(step, thought=parsed["thought"], action=action,

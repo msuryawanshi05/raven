@@ -74,10 +74,10 @@ notify:                     # --notify telegram|discord fires on each finding
 
 # Phase 7 - LLM provider + tracing
 llm:
-  provider: ollama          # ollama | gemini | claude | openai
-  model: llama3.1
-  gemini_api_key: ""        # or set GEMINI_API_KEY env var
-  ollama_model: llama3.1    # fallback if gemini fails
+  provider: gemini          # ollama | gemini (override per run with --llm)
+  model: gemini-flash-lite-latest   # used when provider is gemini
+  gemini_api_key: ""        # leave blank; read from GEMINI_API_KEY (.env supported)
+  ollama_model: llama3.1    # used for provider: ollama and as a gemini fallback
 trace:
   enabled: true
   show_summary: true

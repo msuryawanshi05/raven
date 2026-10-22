@@ -4,6 +4,7 @@ JSONL per step uses the Phase 2 schema. notes.md is a living markdown file with
 fixed sections, rewritten on every add so ordering stays clean.
 """
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -70,7 +71,9 @@ class SessionLog:
             self.notes = NotesFile(notes_path, target, load=True)
             return
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe = target.replace("/", "_").replace(":", "_")
+        # Keep only filename-safe chars so a target with a path/query/port (e.g.
+        # "http://h:5000/search?q=1") cannot produce a path Windows rejects.
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", target).strip("_") or "target"
         self.path = SESSIONS_DIR / f"{safe}_{ts}.jsonl"
         self.notes = NotesFile(SESSIONS_DIR / f"{safe}_{ts}_notes.md", target)
 

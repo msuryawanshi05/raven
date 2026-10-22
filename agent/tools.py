@@ -470,7 +470,8 @@ def check_idor(url, cfg=None):
     base = _get(url, cfg)
     if base is None:
         return f"could not fetch {url}", False
-    base_len = len(base.text or "")
+    base_body = base.text or ""
+    base_len = len(base_body)
     nums = re.findall(r"\d+", url)
     if not nums:
         return f"no numeric id in {url} to test for IDOR", True
@@ -478,12 +479,18 @@ def check_idor(url, cfg=None):
     candidates = {n + 1, n + 2, max(n - 1, 0), random.randint(100000, 999999)}
     hits = []
     for alt in candidates:
+        if alt == n:
+            continue
         r = _get(re.sub(r"(\d+)(?!.*\d)", str(alt), url), cfg)
         if r is None or r.status_code != 200:
             continue
-        if abs(len(r.text or "") - base_len) > max(40, base_len * 0.1):
-            hits.append(f"[MEDIUM] possible IDOR: id {alt} returns "
-                        f"{len(r.text or '')} bytes vs baseline {base_len}")
+        alt_body = r.text or ""
+        # A reachable adjacent id returning different, similarly-sized content is
+        # a likely horizontal-access (IDOR) signal - works for small records too.
+        if (alt_body and alt_body != base_body and base_len > 20
+                and 0.5 * base_len <= len(alt_body) <= 2 * base_len):
+            hits.append(f"[MEDIUM] possible IDOR: adjacent id {alt} returns different "
+                        f"content ({len(alt_body)} bytes vs baseline {base_len})")
     if not hits:
         return f"no IDOR signal mutating id in {url}", True
     return "FINDING IDOR:\n" + "\n".join(hits), True
@@ -543,6 +550,8 @@ def check_cors(url, cfg=None):
         sev = "HIGH" if acac == "true" else "MEDIUM"
         out.append(f"[{sev}] CORS reflects arbitrary origin"
                    + (" with credentials" if acac == "true" else ""))
+    elif acao == "*" and acac == "true":
+        out.append("[HIGH] CORS: wildcard origin allowed with credentials")
     r2 = _get(url, cfg, headers={"Origin": "null"})
     if r2 is not None and r2.headers.get("Access-Control-Allow-Origin", "") == "null":
         out.append("[MEDIUM] CORS allows the 'null' origin")

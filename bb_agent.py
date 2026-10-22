@@ -47,7 +47,9 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
 @click.option("--target", default=None, help="Target domain, e.g. example.com")
 @click.option("--mode", type=click.Choice(["ask", "auto"]), default="ask",
               help="ask: confirm every command. auto: auto-run passive, ask for the rest.")
-@click.option("--model", default=None, help="ollama model (overrides config.yaml)")
+@click.option("--model", default=None, help="model name (overrides config.yaml)")
+@click.option("--llm", "llm_provider", type=click.Choice(["ollama", "gemini"]), default=None,
+              help="LLM provider for the reasoning loop (overrides config.yaml llm.provider).")
 @click.option("--config", "config_path", default=str(CONFIG_DEFAULT),
               type=click.Path(), help="Path to config.yaml")
 @click.option("--report", "report_path", default=None, type=click.Path(),
@@ -78,12 +80,14 @@ _PLATFORM_ALIAS = {"h1": "hackerone"}
               help="Print the hunt-graph summary for a past session's _graph.json.")
 @click.option("--serve", "serve", is_flag=True, help="Start the web dashboard instead of a hunt.")
 @click.option("--port", "port", default=8080, type=int, help="Port for --serve (default 8080).")
-def main(target, mode, model, config_path, report_path, platform, scope_check,
+def main(target, mode, model, llm_provider, config_path, report_path, platform, scope_check,
          challenge_path, targets_path, resume_path, parallel, no_dashboard,
          ai_mode, owasp_only, chain, baseline_only, notify,
          multi_agent, no_trace, graph_summary, serve, port):
     cfg = yaml.safe_load(Path(config_path).read_text())
     _require_deps()
+    if llm_provider:
+        cfg.setdefault("llm", {})["provider"] = llm_provider
 
     if serve:
         return _do_serve(port)
@@ -132,7 +136,13 @@ def _require_deps():
 
 
 def _model(cfg, model):
-    return model or cfg.get("model", "llama3.1")
+    if model:
+        return model
+    llm = cfg.get("llm") or {}
+    if llm.get("provider") == "gemini":
+        m = llm.get("model") or "gemini-flash-lite-latest"
+        return m if m.startswith("gemini") else "gemini-flash-lite-latest"
+    return cfg.get("model", "llama3.1")
 
 
 def _make_dash(cfg, target, mode, no_dashboard):
