@@ -153,3 +153,44 @@ thread has no console, so a prompt would hang it. `loop.run(headless=True)` make
 the browser hunt auto-decline anything that would prompt: passive commands run,
 active commands are declined and fed back so the loop keeps going. This preserves
 the "no unattended active execution" boundary rather than silently auto-approving.
+
+## Native tools over binary wrappers (Phase 9)
+
+`agent/tools.py` gained fifteen pure-Python checks (`subdomain_enum`, `probe_http`,
+`port_scan`, `check_headers/xss/sqli/ssrf/open_redirect/idor/info_disclosure/
+subdomain_takeover/cors/ssti`, `js_analysis`, `tech_fingerprint`) so a clone +
+`pip install -r requirements.txt` is the only install needed, identically on
+Windows/Mac/Linux. The ReAct loop reaches them through the existing
+`tools.execute(action, action_input, ...)` dispatch: a `NATIVE` registry maps each
+tool name to an adapter that parses the single ACTION_INPUT string into arguments,
+so `loop.py` needed only one dispatch branch and `is_passive` one lookup. The
+passive/active split stays the auto-mode boundary, and the scope enforcer still
+gates every call (multi-host tools - `probe_http`, `check_subdomain_takeover` -
+also drop out-of-scope hosts internally).
+
+## External binaries are an optional enhancement, guarded by shutil.which (Phase 9)
+
+reconftw, nuclei, and anything run through `run_command` now run only if that
+binary is actually on PATH (`shutil.which`), returning a clean "not found" message
+otherwise instead of a traceback. subprocess survives in exactly one chokepoint
+(`_run`); no call uses `shell=True`. The hunt seed uses `tools.native_seed`
+(subdomain_enum + probe_http) and only falls back to `reconftw -d <t> -p` when
+reconftw is installed.
+
+## probe_http uses requests.get per worker, not a shared Session (Phase 9)
+
+The spec called for a `requests.Session` across a `ThreadPoolExecutor(10)`. Each
+worker calls `requests.get` through a module-level `_get` helper instead. It is
+functionally equivalent for a one-shot probe (a Session mainly saves connection
+setup across many calls to one host), and it keeps the HTTP layer trivially
+mockable - tests swap `tools.requests` for a fake with a single `get`.
+
+## pyproject declares only the build backend; setup.py owns metadata (Phase 9)
+
+The addon spec gave `build-backend = "setuptools.backends.legacy:build"`, which
+does not exist in setuptools and would break `pip install -e .`, plus a `[project]`
+table duplicating setup.py's name/version (setuptools errors on fields defined in
+both). So `pyproject.toml` uses the real backend `setuptools.build_meta` and
+carries no `[project]` table; `setup.py` is the single source of metadata and the
+`raven=bb_agent:cli` entry point. `cli` is an alias for the existing Click command
+`main`. Verified with `pip install -e . --dry-run` (builds raven-1.0.0).

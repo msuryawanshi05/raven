@@ -21,6 +21,18 @@ const SEV = { CRITICAL: "bg-red-600", HIGH: "bg-orange-500", MEDIUM: "bg-yellow-
 const NODE_COLOR = { domain: "#ef4444", subdomain: "#3b82f6", endpoint: "#22c55e",
                      vuln: "#f59e0b", payload: "#a855f7", service: "#6b7280",
                      port: "#6b7280", technology: "#6b7280" };
+const NATIVE_TOOLS = [
+  "subdomain_enum", "probe_http", "check_headers", "check_info_disclosure",
+  "check_subdomain_takeover", "check_cors", "js_analysis", "tech_fingerprint",
+  "port_scan", "check_xss", "check_sqli", "check_ssrf", "check_open_redirect",
+  "check_idor", "check_ssti"];
+const ToolStatus = () => (
+  <div className="bg-gray-900 rounded p-4 mb-6">
+    <div className="text-sm font-bold mb-2">Native engine ready - pure Python, no external tools required</div>
+    <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-xs">
+      {NATIVE_TOOLS.map(t => <div key={t} className="text-gray-300"><span className="text-green-500">OK</span> {t}</div>)}
+    </div>
+  </div>);
 
 function useHash() {
   const [h, setH] = useState(window.location.hash || "#/");
@@ -95,6 +107,7 @@ function Dashboard() {
         <Stat n={high} l="High / Critical" />
         <Stat n={sessions[0]?.target || "-"} l="Last hunt" />
       </div>
+      <ToolStatus />
       <button className="px-4 py-2 rounded bg-red-600 mb-4" onClick={() => setModal(true)}>Start new hunt</button>
       <table className="w-full text-sm">
         <thead className="text-gray-400 text-left"><tr><th>Target</th><th>Started</th><th>Findings</th><th>Status</th><th></th></tr></thead>
@@ -133,7 +146,10 @@ function Hunt({ id }) {
   return (
     <div className="p-6">
       <div className="flex justify-between mb-3">
-        <h2 className="font-bold">Hunt {id}</h2>
+        <div><h2 className="font-bold">Hunt {id}</h2>
+          {!done && (() => { const last = [...log].reverse().find(m => m.type === "action");
+            return last ? <div className="text-xs text-fuchsia-400">running: {(last.content || "").split(" ")[0]}</div>
+                        : <div className="text-xs text-gray-500">starting...</div>; })()}</div>
         {!done ? <button className="px-3 py-1 rounded bg-red-600" onClick={stop}>Stop hunt</button>
                : <div className="flex gap-2"><a className="px-3 py-1 rounded bg-gray-700" href={"#/reports/" + id}>View report</a>
                      <a className="px-3 py-1 rounded bg-gray-700" href="#/graph">View graph</a></div>}

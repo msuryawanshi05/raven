@@ -1,37 +1,49 @@
 # RAVEN
 
-Agentic bug bounty assistant. It wraps [reconftw](https://github.com/six2dez/reconftw)
-passive recon with a local-LLM ReAct loop that reads the recon output, consults
-per-vuln technique guides, and proposes the next command. Every command is gated
-by human approval, and a failed tool falls back to alternatives automatically.
+Agentic bug bounty assistant with a native Python recon-and-scan engine (crt.sh,
+HTTP probing, port scan, and checks for headers, XSS, SQLi, SSRF, SSTI, CORS,
+IDOR, open redirect, info disclosure, subdomain takeover, JS secrets, tech
+fingerprinting) driven by a local-LLM ReAct loop that reads the output, consults
+per-vuln technique guides, and proposes the next step. No external binaries are
+required; reconftw and nuclei are used automatically only if they are installed.
+Every command is gated by human approval, and a failed tool falls back
+automatically.
 
 > For authorized testing only. Stay in scope. Follow responsible disclosure.
 
-## Setup
+## Installation
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/msuryawanshi05/raven
+cd raven
+pip install -e .        # installs the `raven` command in the current environment
 
-# reconftw (recon engine), install on a Linux recon box:
-#   https://github.com/six2dez/reconftw
-# then set reconftw_path in config.yaml (default: ~/reconftw/reconftw.sh)
-
-# ollama (local LLM runtime):
+# ollama (local LLM runtime for the reasoning loop):
 ollama serve            # start the daemon
 ollama pull llama3.1    # pull the default model
 ```
 
+That is all. The scan engine is pure Python - no subfinder, httpx, nuclei, nmap,
+or reconftw install needed. (reconftw / nuclei are picked up automatically as an
+optional enhancement if they happen to be on PATH.)
+
 ## Usage
 
+`raven` is the installed command; `python bb_agent.py` works identically without
+installing.
+
 ```bash
+# start the web dashboard
+raven --serve
+
 # ask mode: confirm every proposed command (default)
-python bb_agent.py --target example.com --mode ask
+raven --target http://example.com --mode ask
 
 # auto mode: passive commands run automatically, everything else still asks
-python bb_agent.py --target example.com --mode auto
+raven --target http://example.com --mode auto
 
 # different model
-python bb_agent.py --target example.com --model qwen2.5
+raven --target example.com --model qwen2.5
 
 # build a submission-ready report from a past session (no live recon)
 python bb_agent.py --report sessions/example.com_<ts>.jsonl
@@ -71,7 +83,8 @@ python bb_agent.py --graph-summary sessions/example.com_<ts>_graph.json
 
 Each recon run:
 1. Scope check on `--target` (hard block and exit if out of scope).
-2. Runs `reconftw -d <target> -p` (passive) to seed the context.
+2. Seeds the context with native passive recon (`subdomain_enum` + `probe_http`),
+   or `reconftw -d <target> -p` instead if reconftw is installed.
 3. The LLM replies `THOUGHT / ACTION / ACTION_INPUT`, one command per step.
 4. Scope gate: a command aimed at an out-of-scope or excluded host is blocked
    before the human is asked, and the LLM is told to stay in scope.
@@ -281,9 +294,29 @@ cd web && npm install && npm run build
 raven --serve
 ```
 
+## Native engine (Phase 9)
+
+The scan engine (`agent/tools.py`) is pure Python and needs no external binaries.
+Fifteen tools the ReAct loop can call, all returning a plain-text observation:
+
+- Passive (auto-run in `--mode auto`): `subdomain_enum` (crt.sh + HackerTarget +
+  DNS brute force), `probe_http`, `check_headers`, `check_info_disclosure`,
+  `check_subdomain_takeover`, `check_cors`, `js_analysis`, `tech_fingerprint`.
+- Active (asked for in ask mode, auto-run in auto mode): `port_scan`, `check_xss`,
+  `check_sqli`, `check_ssrf`, `check_open_redirect`, `check_idor`, `check_ssti`.
+
+The passive/active split is the same auto-mode safety boundary as before, and the
+scope enforcer still gates every call. reconftw, nuclei, and any command passed to
+`run_command` are used only when that binary is on PATH (checked with
+`shutil.which`), as an optional enhancement; otherwise the native tools do the job.
+Tunables live under `native_tools` in `config.yaml` (workers, timeouts, brute
+force toggle, SSRF `interactsh_url`).
+
 ## Config (`config.yaml`)
 
-- `model` / `reconftw_path` / `max_steps`
+- `model` / `reconftw_path` (optional) / `max_steps`
+- `native_tools`: concurrent_workers, http_timeout, port_scan_timeout,
+  brute_force_subdomains, js_analysis, interactsh_url (see Phase 9 above)
 - `kb_path`: knowledge-base dir (a relative path resolves to the project root)
 - `max_fallback_attempts`: fallbacks tried per failed command
 - `auto_note_findings` + `finding_keywords`: keyword auto-noting

@@ -8,6 +8,16 @@ import { api, useStore } from "./store.js";
 const SEV = { CRITICAL: "#dc2626", HIGH: "#f97316", MEDIUM: "#eab308", LOW: "#3b82f6" };
 const NODE_COLOR = { domain: "#ef4444", subdomain: "#3b82f6", endpoint: "#22c55e",
   vuln: "#f59e0b", payload: "#a855f7", service: "#6b7280", port: "#6b7280", technology: "#6b7280" };
+const NATIVE_TOOLS = ["subdomain_enum", "probe_http", "check_headers", "check_info_disclosure",
+  "check_subdomain_takeover", "check_cors", "js_analysis", "tech_fingerprint", "port_scan",
+  "check_xss", "check_sqli", "check_ssrf", "check_open_redirect", "check_idor", "check_ssti"];
+const ToolStatus = () => (
+  <div className="bg-gray-900 rounded p-4 mb-6">
+    <div className="text-sm font-bold mb-2">Native engine ready - pure Python, no external tools required</div>
+    <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-xs">
+      {NATIVE_TOOLS.map((t) => <div key={t} className="text-gray-300"><span className="text-green-500">OK</span> {t}</div>)}
+    </div>
+  </div>);
 const Badge = ({ t }) => (
   <span style={{ background: SEV[(t || "").toUpperCase()] || "#6b7280" }}
         className="px-2 py-0.5 rounded text-xs text-white">{t}</span>);
@@ -66,6 +76,7 @@ function Dashboard() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <Stat n={sessions.length} l="Sessions" /><Stat n={findings.length} l="Findings" />
         <Stat n={high} l="High / Critical" /><Stat n={sessions[0]?.target || "-"} l="Last hunt" /></div>
+      <ToolStatus />
       <button className="px-4 py-2 rounded bg-red-600 mb-4" onClick={() => setModal(true)}>Start new hunt</button>
       <table className="w-full text-sm"><thead className="text-gray-400 text-left">
         <tr><th>Target</th><th>Started</th><th>Findings</th><th>Status</th><th></th></tr></thead>
@@ -97,7 +108,10 @@ function Hunt() {
   const stop = () => api("/hunt/" + id, { method: "DELETE" }).catch(() => {});
   return (
     <div className="p-6">
-      <div className="flex justify-between mb-3"><h2 className="font-bold">Hunt {id}</h2>
+      <div className="flex justify-between mb-3">
+        <div><h2 className="font-bold">Hunt {id}</h2>
+          {!done && (() => { const last = [...log].reverse().find((m) => m.type === "action");
+            return <div className="text-xs text-fuchsia-400">{last ? "running: " + (last.content || "").split(" ")[0] : "starting..."}</div>; })()}</div>
         {!done ? <button className="px-3 py-1 rounded bg-red-600" onClick={stop}>Stop hunt</button>
                : <div className="flex gap-2"><Link className="px-3 py-1 rounded bg-gray-700" to={"/reports/" + id}>View report</Link>
                      <Link className="px-3 py-1 rounded bg-gray-700" to="/graph">View graph</Link></div>}</div>

@@ -1,0 +1,7 @@
+# Metadata (name, version, entry points, deps) lives in setup.py so there is a
+# single source of truth; this file only declares the build backend.
+# Note: the standard backend is setuptools.build_meta (the legacy path the spec
+# listed does not exist in setuptools and would break `pip install -e .`).
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

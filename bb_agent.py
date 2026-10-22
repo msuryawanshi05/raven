@@ -83,9 +83,11 @@ def main(target, mode, model, config_path, report_path, platform, scope_check,
          ai_mode, owasp_only, chain, baseline_only, notify,
          multi_agent, no_trace, graph_summary, serve, port):
     cfg = yaml.safe_load(Path(config_path).read_text())
+    _require_deps()
 
     if serve:
         return _do_serve(port)
+    console.print("raven ready - native engine, no external tools required")
     if graph_summary:
         return _do_graph_summary(graph_summary)
     if scope_check:
@@ -114,6 +116,20 @@ def main(target, mode, model, config_path, report_path, platform, scope_check,
 
 
 # --- helpers ----------------------------------------------------------------
+
+def _require_deps():
+    """Native engine needs only these Python deps. Fail with a clean hint."""
+    missing = []
+    for mod in ("requests", "dns.resolver"):
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod.split(".")[0])
+    if missing:
+        console.print(f"[red]missing Python dependency: {', '.join(sorted(set(missing)))}."
+                      " run: pip install -r requirements.txt[/]")
+        raise SystemExit(1)
+
 
 def _model(cfg, model):
     return model or cfg.get("model", "llama3.1")
@@ -208,17 +224,15 @@ def hunt_one(cfg, target, mode, model, no_dashboard=False, verbose=True, notify=
     if verbose:
         console.print(f"[bold]hunt[/] [cyan]{target}[/] ({mode}) -> [dim]{log.path}[/]")
 
-    reconftw = os.path.expanduser(cfg["reconftw_path"])
-    if not os.path.isfile(reconftw):
+    reconftw = os.path.expanduser(cfg.get("reconftw_path") or "")
+    if reconftw and os.path.isfile(reconftw):  # optional enhancement over native recon
         if verbose:
-            console.print(f"[red]reconftw not found at {reconftw}[/] - "
-                          "install: https://github.com/six2dez/reconftw")
-        log.log("error", error=f"reconftw not found at {reconftw}")
-        return summary(0, "no_reconftw", log)
-
-    if verbose:
-        console.print("[bold]Running passive recon (reconftw -p)...[/]")
-    recon, ok = tools.run_reconftw(reconftw, f"-d {target} -p")
+            console.print("[bold]Running passive recon (reconftw -p)...[/]")
+        recon, ok = tools.run_reconftw(reconftw, f"-d {target} -p")
+    else:
+        if verbose:
+            console.print("[bold]Running native passive recon...[/]")
+        recon, ok = tools.native_seed(target, cfg), True
     log.log("recon_seed", target=target, status="success" if ok else "failed", output=recon)
 
     nuclei_out = _nuclei_scan(cfg, target, recon, log, verbose)
@@ -413,6 +427,8 @@ def _do_serve(port):
         pass
     uvicorn.run("server.main:app", host="127.0.0.1", port=port)
 
+
+cli = main  # console_scripts entry point: `raven` -> bb_agent:cli
 
 if __name__ == "__main__":
     main()

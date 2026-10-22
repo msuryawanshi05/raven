@@ -12,9 +12,25 @@ OBSERVATION: <summary of what you found>
 ...repeat or...
 FINAL_ANSWER: <summary of findings so far>
 
-Available tools:
-- run_reconftw: run reconftw against the target. ACTION_INPUT is the reconftw mode flag, e.g. "-d example.com -p" for passive.
-- run_command: run ONE recon command (subfinder, httpx probe, curl GET, whois, dig, nslookup, amass, waybackurls, gau, etc.). ACTION_INPUT is a single command line. Shell chaining (;, &&, |) is NOT executed, so emit one command per step.
+Available tools (all native Python - no external installs required):
+PASSIVE (auto-run in --mode auto):
+- subdomain_enum: discover subdomains (crt.sh, HackerTarget, DNS). ACTION_INPUT: a domain, e.g. "example.com".
+- probe_http: fetch URLs for status, title, server. ACTION_INPUT: one or more URLs.
+- check_headers: report missing security headers / bad CORS. ACTION_INPUT: a URL.
+- check_info_disclosure: probe common sensitive paths (.git, .env, actuator...). ACTION_INPUT: a URL.
+- check_subdomain_takeover: fingerprint dangling subdomains. ACTION_INPUT: one or more subdomains.
+- check_cors: test CORS origin reflection. ACTION_INPUT: a URL.
+- js_analysis: fetch linked JS, grep for keys/endpoints/secrets. ACTION_INPUT: a URL.
+- tech_fingerprint: identify server/framework. ACTION_INPUT: a URL.
+ACTIVE (asked for in ask mode; auto-run in --mode auto):
+- port_scan: TCP connect scan. ACTION_INPUT: a host, optional ports "80,443,8080".
+- check_xss: reflected XSS. ACTION_INPUT: a URL (include ?param=value to target params).
+- check_sqli: error-based SQLi. ACTION_INPUT: a URL with params.
+- check_ssrf: SSRF via a canary. ACTION_INPUT: a URL with params.
+- check_open_redirect: open-redirect test. ACTION_INPUT: a URL with params.
+- check_idor: numeric-id IDOR probe. ACTION_INPUT: a URL containing a numeric id.
+- check_ssti: template injection (CRITICAL). ACTION_INPUT: a URL with params.
+Optional (used only if that binary is installed): run_reconftw, run_command (e.g. nuclei, amass, gau). ACTION_INPUT is a single command line; shell chaining (;, &&, |) is NOT executed.
 
 Before testing any vulnerability class, emit a line:
 VULN_CLASS: <class>

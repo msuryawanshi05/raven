@@ -6,3 +6,6 @@ networkx>=3.0
 fastapi
 uvicorn[standard]
 websockets
+dnspython
+requests
+urllib3
