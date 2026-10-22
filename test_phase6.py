@@ -46,12 +46,13 @@ def test_execute_sleeps_matched_delay():
 
 def test_run_nuclei_argv():
     captured = {}
-    orig = tools._run
+    orig_run, orig_which = tools._run, tools.shutil.which
     tools._run = lambda argv: (captured.setdefault("argv", argv), ("", True))[1]
+    tools.shutil.which = lambda name: "/usr/bin/" + name  # pretend nuclei is installed
     try:
         tools.run_nuclei("hosts.txt", "high,critical")
     finally:
-        tools._run = orig
+        tools._run, tools.shutil.which = orig_run, orig_which
     assert captured["argv"] == ["nuclei", "-l", "hosts.txt", "-severity", "high,critical", "-silent"]
 
 

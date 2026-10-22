@@ -10,3 +10,6 @@ reports/
 web/node_modules/
 web/dist/*
 !web/dist/index.html
+*.egg-info/
+build/
+.eggs/

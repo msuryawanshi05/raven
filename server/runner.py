@@ -51,14 +51,14 @@ def _run_hunt(sid, log, params, cfg):
                                      "timestamp": _now()})
             log.log("scope_block", target=target, reason=sr.reason)
             return
-        reconftw = os.path.expanduser(cfg["reconftw_path"])
-        recon = ""
-        if os.path.isfile(reconftw):
+        reconftw = os.path.expanduser(cfg.get("reconftw_path") or "")
+        if reconftw and os.path.isfile(reconftw):
             recon, _ = tools.run_reconftw(reconftw, f"-d {target} -p")
         else:
             bridge.put_message(sid, {"type": "observation",
-                                     "content": "reconftw not installed; running loop without a recon seed",
+                                     "content": "native passive recon seed (subdomain_enum + probe_http)",
                                      "timestamp": _now()})
+            recon = tools.native_seed(target, cfg)
         log.log("recon_seed", target=target, output=recon)
 
         if params.get("ai_mode") or params.get("owasp_only"):
